@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_language.dart';
+import '../l10n/app_strings.dart';
 import '../providers/auth_provider.dart';
+import '../providers/settings_provider.dart';
 import '../providers/theme_provider.dart';
 
 /// Central settings entry point (gear icon) shown in every screen's AppBar.
 ///
-/// Opens a modal bottom sheet with the signed-in account (sign out) and the
-/// Dark-Mode toggle.
+/// Opens a modal bottom sheet with the signed-in account (sign out), the
+/// Dark-Mode toggle and the language picker.
 class SettingsButton extends StatelessWidget {
   const SettingsButton({super.key});
 
@@ -15,7 +18,7 @@ class SettingsButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return IconButton(
       icon: const Icon(Icons.settings),
-      tooltip: 'Settings',
+      tooltip: context.strings.settings,
       onPressed: () => _openSettings(context),
     );
   }
@@ -37,7 +40,9 @@ class _SettingsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final strings = context.strings;
     final themeProvider = context.watch<ThemeProvider>();
+    final settingsProvider = context.watch<SettingsProvider>();
     final authProvider = context.watch<AuthProvider>();
     final isDark = themeProvider.effectivelyDark(
       MediaQuery.of(context).platformBrightness,
@@ -53,7 +58,7 @@ class _SettingsSheet extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
               child: Text(
-                'Settings',
+                strings.settings,
                 style: Theme.of(
                   context,
                 ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -64,11 +69,11 @@ class _SettingsSheet extends StatelessWidget {
             ListTile(
               leading: Icon(Icons.account_circle_outlined, color: cs.primary),
               title: Text(
-                email ?? 'Signed in',
+                email ?? strings.signedIn,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              subtitle: const Text('Signed in with a magic link'),
+              subtitle: Text(strings.signedInWithMagicLink),
             ),
             const Divider(height: 1),
             SwitchListTile(
@@ -76,19 +81,40 @@ class _SettingsSheet extends StatelessWidget {
                 isDark ? Icons.dark_mode : Icons.light_mode,
                 color: cs.primary,
               ),
-              title: const Text('Dark Mode'),
-              subtitle: Text(
-                isDark
-                    ? 'Dark color scheme active'
-                    : 'Light color scheme active',
-              ),
+              title: Text(strings.darkMode),
+              subtitle: Text(isDark ? strings.darkActive : strings.lightActive),
               value: isDark,
               onChanged: (value) => themeProvider.setDark(value),
             ),
             const Divider(height: 1),
             ListTile(
+              leading: Icon(Icons.language, color: cs.primary),
+              title: Text(strings.languageLabel),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: SegmentedButton<AppLanguage>(
+                segments: [
+                  for (final language in AppLanguage.values)
+                    ButtonSegment<AppLanguage>(
+                      value: language,
+                      // Native names, identical in every language.
+                      label: Text(language.label),
+                    ),
+                ],
+                selected: <AppLanguage>{settingsProvider.language},
+                showSelectedIcon: false,
+                onSelectionChanged: (selection) =>
+                    settingsProvider.setLanguage(selection.first),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
               leading: Icon(Icons.logout, color: cs.error),
-              title: Text('Sign out', style: TextStyle(color: cs.error)),
+              title: Text(
+                strings.signOut,
+                style: TextStyle(color: cs.error),
+              ),
               onTap: () {
                 // Grab the provider before the sheet (and its context) is gone.
                 final auth = context.read<AuthProvider>();
@@ -100,8 +126,7 @@ class _SettingsSheet extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
               child: Text(
-                'This product uses the TMDB API but is not endorsed or '
-                'certified by TMDB.',
+                strings.tmdbAttribution,
                 style: Theme.of(
                   context,
                 ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),

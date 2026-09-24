@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/app_config.dart';
 import 'providers/auth_provider.dart';
+import 'providers/settings_provider.dart';
 import 'providers/theme_provider.dart';
 import 'repositories/media_repository.dart';
 import 'services/tmdb_client.dart';
@@ -15,7 +16,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final themeProvider = ThemeProvider();
-  await themeProvider.load();
+  final settingsProvider = SettingsProvider();
+  await Future.wait([themeProvider.load(), settingsProvider.load()]);
 
   await Supabase.initialize(
     url: AppConfig.supabaseUrl,
@@ -29,7 +31,11 @@ Future<void> main() async {
   unawaited(authProvider.init());
 
   runApp(
-    MediaTrackerApp(themeProvider: themeProvider, authProvider: authProvider),
+    MediaTrackerApp(
+      themeProvider: themeProvider,
+      settingsProvider: settingsProvider,
+      authProvider: authProvider,
+    ),
   );
 }
 
@@ -37,12 +43,14 @@ class MediaTrackerApp extends StatelessWidget {
   const MediaTrackerApp({
     super.key,
     required this.themeProvider,
+    required this.settingsProvider,
     required this.authProvider,
     this.repository,
     this.tmdbClient,
   });
 
   final ThemeProvider themeProvider;
+  final SettingsProvider settingsProvider;
   final AuthProvider authProvider;
 
   /// Overridable so widget tests can run without a live Supabase backend.
@@ -56,6 +64,7 @@ class MediaTrackerApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
+        ChangeNotifierProvider<SettingsProvider>.value(value: settingsProvider),
         ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
         Provider<MediaRepository>(
           create: (_) => repository ?? MediaRepository(),

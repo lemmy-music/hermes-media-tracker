@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:media_tracker/l10n/app_language.dart';
 import 'package:media_tracker/main.dart';
 import 'package:media_tracker/models/media_item.dart';
 import 'package:media_tracker/providers/auth_provider.dart';
+import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/providers/theme_provider.dart';
 import 'package:media_tracker/repositories/media_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// In-memory auth provider — no Supabase backend required.
 class _FakeAuth extends AuthProvider {
@@ -87,10 +90,15 @@ Future<void> _pumpApp(
   WidgetTester tester, {
   required AuthProvider auth,
   MediaRepository? repository,
+  SettingsProvider? settings,
 }) async {
   await tester.pumpWidget(
     MediaTrackerApp(
       themeProvider: ThemeProvider(),
+      // English by default so the string assertions below stay readable and
+      // independent of the app default (German). See the dedicated German
+      // tests further down.
+      settingsProvider: settings ?? SettingsProvider(initial: AppLanguage.en),
       authProvider: auth,
       repository: repository ?? _FakeRepository(),
     ),
@@ -100,6 +108,9 @@ Future<void> _pumpApp(
 }
 
 void main() {
+  // The language toggle persists via SharedPreferences — give it a mock store.
+  setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
+
   testWidgets('shows a loading indicator while the session is restored',
       (WidgetTester tester) async {
     final auth = _FakeAuth(status: AuthStatus.unknown);
@@ -252,11 +263,65 @@ void main() {
     expect(find.text('daniel@example.com'), findsOneWidget);
     expect(find.text('Sign out'), findsOneWidget);
 
+    // The sheet grew with the language row — scroll the sign-out row into view.
+    await tester.ensureVisible(find.text('Sign out'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Sign out'));
     await tester.pumpAndSettle();
 
     expect(auth.signOutCount, 1);
     // AuthGate swapped back to the login screen.
     expect(find.text('Send magic link'), findsOneWidget);
+  });
+
+  testWidgets('defaults to German when nothing is stored',
+      (WidgetTester tester) async {
+    // A provider with the default initial value == first launch, no prefs.
+    await _pumpApp(
+      tester,
+      auth: _FakeAuth(),
+      settings: SettingsProvider(),
+    );
+
+    expect(find.text('Deine Bibliothek ist leer'), findsOneWidget);
+    expect(find.text('Bibliothek'), findsWidgets);
+    expect(find.text('Suche'), findsOneWidget);
+    expect(find.text('Statistik'), findsOneWidget);
+    expect(find.text('Your library is empty'), findsNothing);
+  });
+
+  testWidgets('German covers the login screen too',
+      (WidgetTester tester) async {
+    await _pumpApp(
+      tester,
+      auth: _FakeAuth(status: AuthStatus.signedOut),
+      settings: SettingsProvider(),
+    );
+
+    expect(find.text('Anmelde-Link senden'), findsOneWidget);
+    expect(find.text('E-Mail-Adresse'), findsOneWidget);
+    expect(find.text('Send magic link'), findsNothing);
+  });
+
+  testWidgets('settings sheet toggles the language immediately',
+      (WidgetTester tester) async {
+    await _pumpApp(tester, auth: _FakeAuth());
+
+    await tester.tap(find.byIcon(Icons.settings));
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsOneWidget);
+
+    // Switch to German — the whole UI (and this sheet) must update at once.
+    await tester.tap(find.text('Deutsch'));
+    await tester.pumpAndSettle();
+    expect(find.text('Einstellungen'), findsOneWidget);
+    expect(find.text('Abmelden'), findsOneWidget);
+    expect(find.text('Sprache'), findsOneWidget);
+
+    // …and back to English.
+    await tester.tap(find.text('English'));
+    await tester.pumpAndSettle();
+    expect(find.text('Settings'), findsOneWidget);
+    expect(find.text('Sign out'), findsOneWidget);
   });
 }

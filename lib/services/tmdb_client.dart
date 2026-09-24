@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
+import '../l10n/app_strings.dart';
 import '../models/tmdb_result.dart';
 
 /// A TMDB failure translated into a message that is safe to show the user.
@@ -15,7 +16,7 @@ class TmdbException implements Exception {
     this.cause,
   });
 
-  /// User-facing, English message.
+  /// User-facing message, localized to the request language.
   final String message;
 
   /// HTTP status code, when the failure came from a response.
@@ -56,16 +57,29 @@ enum TmdbSearchScope {
 /// Every request has a 15s timeout and is translated into a [TmdbException]
 /// with a user-readable message.
 class TmdbClient {
-  TmdbClient({http.Client? httpClient, String? token})
+  TmdbClient({
+    http.Client? httpClient,
+    String? token,
+    this.language = defaultLanguage,
+  })
     : _http = httpClient ?? http.Client(),
       _token = token ?? AppConfig.tmdbToken;
 
   static const String _base = AppConfig.tmdbApiBase;
   static const Duration _timeout = Duration(seconds: 15);
-  static const String _language = 'en-US';
+
+  /// TMDB `language` value used when a call does not override it.
+  static const String defaultLanguage = 'en-US';
 
   final http.Client _http;
   final String _token;
+
+  /// Default TMDB `language` for every request (`de-DE` / `en-US`).
+  ///
+  /// The app passes the active UI language per call (see [search] /
+  /// [fetchDetails]'s `language` argument) so a language switch takes effect
+  /// immediately without rebuilding the client.
+  final String language;
 
   /// Whether a token is available. When `false` every call throws a
   /// [TmdbException] with `missingToken: true`.
@@ -80,10 +94,12 @@ class TmdbClient {
   /// [scope] `all` uses `search/multi` (filters out people), `movie` /
   /// `tv` use the dedicated endpoints for exact results.
   /// [page] is 1-based (TMDB's paging).
+  /// [language] overrides [TmdbClient.language] for this request.
   Future<List<TmdbSearchResult>> search(
     String query, {
     TmdbSearchScope scope = TmdbSearchScope.all,
     int page = 1,
+    String? language,
   }) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return const <TmdbSearchResult>[];
@@ -105,6 +121,7 @@ class TmdbClient {
     final json = await _get(
       path,
       query: {'query': trimmed, 'page': '$page', 'include_adult': 'false'},
+      language: language,
     );
 
     final results = json['results'];
@@ -126,28 +143,38 @@ class TmdbClient {
   // ───────────────────────────────────────────────────────────────────────────
 
   /// `movie/{id}` — runtime included.
-  Future<TmdbMovieDetails> fetchMovie(int id) async {
-    final json = await _get('/movie/$id');
+  Future<TmdbMovieDetails> fetchMovie(int id, {String? language}) async {
+    final json = await _get('/movie/$id', language: language);
     return TmdbMovieDetails.fromJson(json);
   }
 
   /// `tv/{id}` — season / episode counts included.
-  Future<TmdbTvDetails> fetchTv(int id) async {
-    final json = await _get('/tv/$id');
+  Future<TmdbTvDetails> fetchTv(int id, {String? language}) async {
+    final json = await _get('/tv/$id', language: language);
     return TmdbTvDetails.fromJson(json);
   }
 
   /// `tv/{id}/season/{n}` — the episode list (used by Phase 4).
-  Future<TmdbSeasonDetails> fetchSeason(int tvId, int seasonNumber) async {
-    final json = await _get('/tv/$tvId/season/$seasonNumber');
+  Future<TmdbSeasonDetails> fetchSeason(
+    int tvId,
+    int seasonNumber, {
+    String? language,
+  }) async {
+    final json = await _get(
+      '/tv/$tvId/season/$seasonNumber',
+      language: language,
+    );
     return TmdbSeasonDetails.fromJson(json);
   }
 
   /// Loads the right detail response for a search hit.
-  Future<TmdbDetails> fetchDetails(TmdbSearchResult result) {
+  Future<TmdbDetails> fetchDetails(
+    TmdbSearchResult result, {
+    String? language,
+  }) {
     return switch (result.type) {
-      TmdbMediaType.movie => fetchMovie(result.id),
-      TmdbMediaType.tv => fetchTv(result.id),
+      TmdbMediaType.movie => fetchMovie(result.id, language: language),
+      TmdbMediaType.tv => fetchTv(result.id, language: language),
     };
   }
 
@@ -158,17 +185,20 @@ class TmdbClient {
   Future<Map<String, dynamic>> _get(
     String path, {
     Map<String, String>? query,
+    String? language,
   }) async {
+    final requestLanguage = language ?? this.language;
+    final strings = AppStrings.forTmdb(requestLanguage);
+
     if (!hasToken) {
-      throw const TmdbException(
-        'TMDB is not configured for this build. '
-        'Rebuild with --dart-define=TMDB_TOKEN=….',
-        missingToken: true,
-      );
+      throw TmdbException(strings.tmdbNotConfigured, missingToken: true);
     }
 
     final uri = Uri.parse('$_base$path').replace(
-      queryParameters: <String, String>{'language': _language, ...?query},
+      queryParameters: <String, String>{
+        'language': requestLanguage,
+        ...?query,
+      },
     );
 
     http.Response response;
@@ -184,42 +214,27 @@ class TmdbClient {
           .timeout(_timeout);
     } on TimeoutException catch (error) {
       throw TmdbException(
-        'The request to TMDB timed out. Please try again.',
+        strings.tmdbTimeout,
         cause: error,
       );
     } on http.ClientException catch (error) {
-      throw TmdbException(
-        'Could not reach TMDB. Check your connection and try again.',
-        cause: error,
-      );
+      throw TmdbException(strings.tmdbUnreachable, cause: error);
     } catch (error) {
-      throw TmdbException(
-        'Could not reach TMDB. Check your connection and try again.',
-        cause: error,
-      );
+      throw TmdbException(strings.tmdbUnreachable, cause: error);
     }
 
     switch (response.statusCode) {
       case 200:
         break;
       case 401:
-        throw const TmdbException(
-          'TMDB rejected the API token. Check that TMDB_TOKEN is valid.',
-          statusCode: 401,
-        );
+        throw TmdbException(strings.tmdbInvalidToken, statusCode: 401);
       case 404:
-        throw const TmdbException(
-          'TMDB could not find that title.',
-          statusCode: 404,
-        );
+        throw TmdbException(strings.tmdbNotFound, statusCode: 404);
       case 429:
-        throw const TmdbException(
-          'Too many requests to TMDB. Please wait a moment and retry.',
-          statusCode: 429,
-        );
+        throw TmdbException(strings.tmdbRateLimited, statusCode: 429);
       default:
         throw TmdbException(
-          'TMDB request failed. Please try again.',
+          strings.tmdbRequestFailed,
           statusCode: response.statusCode,
         );
     }
@@ -228,14 +243,11 @@ class TmdbClient {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) return decoded;
       if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      throw const TmdbException('TMDB returned an unexpected response.');
+      throw TmdbException(strings.tmdbUnexpectedResponse);
     } on TmdbException {
       rethrow;
     } on FormatException catch (error) {
-      throw TmdbException(
-        'TMDB returned an unreadable response.',
-        cause: error,
-      );
+      throw TmdbException(strings.tmdbUnreadableResponse, cause: error);
     }
   }
 

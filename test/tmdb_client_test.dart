@@ -109,6 +109,68 @@ void main() {
       );
       expect(await client.search('   '), isEmpty);
     });
+
+    test('a per-request language overrides the client default', () async {
+      late Uri requestUri;
+      final client = _client((request) async {
+        requestUri = request.url;
+        return _json({'results': <dynamic>[]});
+      });
+
+      await client.search('herr der ringe', language: 'de-DE');
+      expect(requestUri.queryParameters['language'], 'de-DE');
+    });
+
+    test('the constructor language is the default for every request',
+        () async {
+      late Uri requestUri;
+      final client = TmdbClient(
+        httpClient: MockClient((request) async {
+          requestUri = request.url;
+          return _json({'id': 1, 'title': 'X'});
+        }),
+        token: 'test-token',
+        language: 'de-DE',
+      );
+
+      await client.fetchMovie(1);
+      expect(requestUri.queryParameters['language'], 'de-DE');
+    });
+  });
+
+  group('TmdbClient localization', () {
+    test('localizes error messages to the request language', () async {
+      final client = _client((_) async => _json({}, status: 429));
+
+      await expectLater(
+        client.search('inception', language: 'de-DE'),
+        throwsA(
+          isA<TmdbException>().having(
+            (e) => e.message,
+            'message',
+            contains('Zu viele Anfragen'),
+          ),
+        ),
+      );
+    });
+
+    test('localizes the missing-token message', () async {
+      final client = _client(
+        (_) async => throw StateError('should not be called'),
+        token: '',
+      );
+
+      await expectLater(
+        client.search('inception', language: 'de-DE'),
+        throwsA(
+          isA<TmdbException>().having(
+            (e) => e.message,
+            'message',
+            contains('nicht konfiguriert'),
+          ),
+        ),
+      );
+    });
   });
 
   group('TmdbClient error handling', () {

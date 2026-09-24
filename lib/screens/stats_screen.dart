@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
 import '../widgets/settings_button.dart';
 
 /// Placeholder Stats tab — analytics arrive in Phase 5.
@@ -9,9 +10,10 @@ class StatsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final strings = context.strings;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Stats'),
+        title: Text(strings.stats),
         actions: const [SettingsButton()],
       ),
       body: Center(
@@ -21,12 +23,12 @@ class StatsScreen extends StatelessWidget {
             Icon(Icons.insights, size: 64, color: cs.primary),
             const SizedBox(height: 16),
             Text(
-              'Stats coming soon',
+              strings.statsComingSoon,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
             Text(
-              'Track how much you watch and read over time.',
+              strings.statsDescription,
               style: Theme.of(context)
                   .textTheme
                   .bodyMedium

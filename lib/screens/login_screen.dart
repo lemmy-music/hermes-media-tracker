@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_strings.dart';
 import '../providers/auth_provider.dart';
 
 /// Signs the user in with an email magic link.
@@ -81,6 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildForm(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final strings = context.strings;
 
     return Form(
       key: _formKey,
@@ -90,15 +92,14 @@ class _LoginScreenState extends State<LoginScreen> {
           Icon(Icons.movie_filter_outlined, size: 64, color: cs.primary),
           const SizedBox(height: 20),
           Text(
-            'Media Tracker',
+            strings.appTitle,
             style: theme.textTheme.headlineSmall
                 ?.copyWith(fontWeight: FontWeight.bold),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
           Text(
-            'Track the movies, series and books you have seen, watched and '
-            'read.',
+            strings.loginTagline,
             style: theme.textTheme.bodyMedium
                 ?.copyWith(color: cs.onSurfaceVariant),
             textAlign: TextAlign.center,
@@ -111,17 +112,17 @@ class _LoginScreenState extends State<LoginScreen> {
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.done,
             autofillHints: const [AutofillHints.email],
-            decoration: const InputDecoration(
-              labelText: 'Email address',
-              hintText: 'you@example.com',
-              prefixIcon: Icon(Icons.mail_outline),
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: strings.emailAddress,
+              hintText: strings.emailHint,
+              prefixIcon: const Icon(Icons.mail_outline),
+              border: const OutlineInputBorder(),
             ),
             validator: (value) {
               final email = value?.trim() ?? '';
-              if (email.isEmpty) return 'Please enter your email address.';
+              if (email.isEmpty) return strings.emailRequired;
               if (!_emailPattern.hasMatch(email)) {
-                return 'Please enter a valid email address.';
+                return strings.emailInvalid;
               }
               return null;
             },
@@ -146,12 +147,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.send_outlined),
-            label: Text(_sending ? 'Sending…' : 'Send magic link'),
+            label: Text(_sending ? strings.sending : strings.sendMagicLink),
           ),
           const SizedBox(height: 16),
           Text(
-            'No password needed — we will email you a one-time sign-in link. '
-            'A new account is created on your first sign-in.',
+            strings.magicLinkDetails,
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: cs.onSurfaceVariant),
             textAlign: TextAlign.center,
@@ -164,6 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildSent(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final strings = context.strings;
     final sentTo = _sentTo!;
 
     return Column(
@@ -172,15 +173,14 @@ class _LoginScreenState extends State<LoginScreen> {
         Icon(Icons.mark_email_read_outlined, size: 64, color: cs.primary),
         const SizedBox(height: 20),
         Text(
-          'Check your inbox',
+          strings.checkInbox,
           style: theme.textTheme.headlineSmall
               ?.copyWith(fontWeight: FontWeight.bold),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 12),
         Text(
-          'We sent a sign-in link to $sentTo. Open it in this browser to '
-          'finish signing in.',
+          strings.sentLinkTo(sentTo),
           style: theme.textTheme.bodyMedium
               ?.copyWith(color: cs.onSurfaceVariant),
           textAlign: TextAlign.center,
@@ -188,8 +188,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 24),
         _MessageBox(
           icon: Icons.info_outline,
-          message: 'The link expires after a short while. Nothing in your '
-              'inbox? Check the spam folder.',
+          message: strings.linkExpiryNote,
           background: cs.surfaceContainerHighest,
           foreground: cs.onSurfaceVariant,
         ),
@@ -200,7 +199,7 @@ class _LoginScreenState extends State<LoginScreen> {
             _error = null;
           }),
           icon: const Icon(Icons.arrow_back),
-          label: const Text('Use a different email'),
+          label: Text(strings.useDifferentEmail),
         ),
       ],
     );

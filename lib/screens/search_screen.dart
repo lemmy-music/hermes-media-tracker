@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_strings.dart';
 import '../models/tmdb_result.dart';
+import '../providers/settings_provider.dart';
 import '../repositories/media_repository.dart';
 import '../services/tmdb_client.dart';
 import '../widgets/media_widgets.dart';
@@ -19,6 +21,11 @@ class SearchScreen extends StatefulWidget {
 
   /// Minimum query length before a request is sent.
   static const int minQueryLength = 2;
+
+  /// Above this width the result posters grow a little.
+  static const double wideBreakpoint = 720;
+  static const double posterNarrow = 96;
+  static const double posterWide = 112;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -84,21 +91,25 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Future<void> _runSearch(String query) async {
     final client = context.read<TmdbClient>();
+    final strings = AppStrings.read(context);
+    final language = context.read<SettingsProvider>().tmdbLanguage;
     final requestId = ++_requestId;
 
     if (!client.hasToken) {
       setState(() {
         _loading = false;
-        _error =
-            'Search is unavailable: this build has no TMDB token '
-            'configured. Rebuild the app with --dart-define=TMDB_TOKEN=….';
+        _error = strings.searchMissingToken;
       });
       return;
     }
 
     setState(() => _loading = true);
     try {
-      final results = await client.search(query, scope: _scope);
+      final results = await client.search(
+        query,
+        scope: _scope,
+        language: language,
+      );
       if (!mounted || requestId != _requestId) return;
       setState(() {
         _results = results;
@@ -127,11 +138,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final strings = context.strings;
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Search'),
-        actions: const [SettingsButton()],
-      ),
+      appBar: AppBar(title: Text(strings.search), actions: const [SettingsButton()]),
       body: Column(
         children: [
           Padding(
@@ -141,13 +150,13 @@ class _SearchScreenState extends State<SearchScreen> {
               onChanged: _onQueryChanged,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: 'Search movies and series',
+                hintText: strings.searchHint,
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _query.isEmpty
                     ? null
                     : IconButton(
                         icon: const Icon(Icons.clear),
-                        tooltip: 'Clear',
+                        tooltip: strings.clear,
                         onPressed: () {
                           _controller.clear();
                           _onQueryChanged('');
@@ -170,7 +179,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   for (final scope in TmdbSearchScope.values)
                     ButtonSegment<TmdbSearchScope>(
                       value: scope,
-                      label: Text(scope.label),
+                      label: Text(strings.scopeLabel(scope)),
                     ),
                 ],
                 selected: <TmdbSearchScope>{_scope},
@@ -188,11 +197,13 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
+    final strings = context.strings;
+
     if (!_isActive) {
-      return const CenteredMessage(
+      return CenteredMessage(
         icon: Icons.search,
-        title: 'Find something to track',
-        message: 'Search for movies and series by title.',
+        title: strings.searchIdleTitle,
+        message: strings.searchIdleMessage,
         scrollable: false,
       );
     }
@@ -203,33 +214,43 @@ class _SearchScreenState extends State<SearchScreen> {
     if (error != null) {
       return CenteredMessage(
         icon: Icons.cloud_off,
-        title: 'Search failed',
+        title: strings.searchFailedTitle,
         message: error,
         scrollable: false,
         action: FilledButton.icon(
           onPressed: () => _runSearch(_trimmed),
           icon: const Icon(Icons.refresh),
-          label: const Text('Retry'),
+          label: Text(strings.retry),
         ),
       );
     }
     if (_results.isEmpty) {
-      return const CenteredMessage(
+      return CenteredMessage(
         icon: Icons.search_off,
-        title: 'No results',
-        message: 'Try a different spelling or a shorter query.',
+        title: strings.noResultsTitle,
+        message: strings.noResultsMessage,
         scrollable: false,
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.only(bottom: 16),
-      itemCount: _results.length,
-      separatorBuilder: (_, _) => const Divider(height: 1, indent: 80),
-      itemBuilder: (context, index) {
-        final result = _results[index];
-        return _SearchResultTile(
-          result: result,
-          onTap: () => _openDetail(result),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final posterWidth =
+            constraints.maxWidth >= SearchScreen.wideBreakpoint
+            ? SearchScreen.posterWide
+            : SearchScreen.posterNarrow;
+        return ListView.separated(
+          padding: const EdgeInsets.only(bottom: 16),
+          itemCount: _results.length,
+          separatorBuilder: (_, _) =>
+              Divider(height: 1, indent: 16 + posterWidth + 14),
+          itemBuilder: (context, index) {
+            final result = _results[index];
+            return _SearchResultTile(
+              result: result,
+              posterWidth: posterWidth,
+              onTap: () => _openDetail(result),
+            );
+          },
         );
       },
     );
@@ -238,54 +259,78 @@ class _SearchScreenState extends State<SearchScreen> {
 
 /// One hit in the search results: poster, title, year, kind badge, teaser.
 class _SearchResultTile extends StatelessWidget {
-  const _SearchResultTile({required this.result, required this.onTap});
+  const _SearchResultTile({
+    required this.result,
+    required this.posterWidth,
+    required this.onTap,
+  });
 
   final TmdbSearchResult result;
+  final double posterWidth;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final strings = context.strings;
     final year = result.year;
     final overview = result.shortOverview;
+    final posterHeight = posterWidth * 3 / 2;
 
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+    return InkWell(
       onTap: onTap,
-      leading: PosterThumbnail(
-        url: result.posterUrl,
-        placeholderIcon: tmdbTypeIcon(result.type),
-      ),
-      title: Text(result.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Column(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                PillBadge(
-                  icon: tmdbTypeIcon(result.type),
-                  label: result.type.label,
-                ),
-                if (year != null)
-                  Text('$year', style: theme.textTheme.bodySmall),
-              ],
+            PosterThumbnail(
+              url: result.posterUrl,
+              placeholderIcon: tmdbTypeIcon(result.type),
+              width: posterWidth,
+              height: posterHeight,
+              iconSize: posterWidth * 0.35,
+              borderRadius: 10,
             ),
-            if (overview != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                overview,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    result.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      PillBadge(
+                        icon: tmdbTypeIcon(result.type),
+                        label: strings.typeLabel(result.type),
+                      ),
+                      if (year != null)
+                        Text('$year', style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                  if (overview != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      overview,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ],
+            ),
           ],
         ),
       ),
@@ -324,6 +369,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
   Future<void> _load() async {
     final client = context.read<TmdbClient>();
     final repository = context.read<MediaRepository>();
+    final language = context.read<SettingsProvider>().tmdbLanguage;
 
     setState(() {
       _loading = true;
@@ -331,7 +377,10 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
     });
 
     try {
-      final details = await client.fetchDetails(widget.result);
+      final details = await client.fetchDetails(
+        widget.result,
+        language: language,
+      );
       bool alreadyTracked = false;
       try {
         final existing = await repository.findByExternal(
@@ -363,6 +412,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
 
     final messenger = ScaffoldMessenger.of(context);
     final repository = context.read<MediaRepository>();
+    final strings = AppStrings.read(context);
 
     setState(() => _adding = true);
     try {
@@ -372,7 +422,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
         _added = true;
         _adding = false;
       });
-      messenger.showSnackBar(const SnackBar(content: Text('Added to library')));
+      messenger.showSnackBar(SnackBar(content: Text(strings.addedToLibrary)));
     } on MediaRepositoryException catch (error) {
       if (!mounted) return;
       final alreadyInLibrary = error.message.toLowerCase().contains(
@@ -385,7 +435,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            alreadyInLibrary ? 'Already in your library' : error.message,
+            alreadyInLibrary ? strings.alreadyInLibrary : error.message,
           ),
         ),
       );
@@ -396,6 +446,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final strings = context.strings;
     final details = _details;
     final result = widget.result;
 
@@ -419,10 +470,10 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
               child: PosterThumbnail(
                 url: TmdbImages.poster(posterPath, size: 'w500'),
                 placeholderIcon: tmdbTypeIcon(result.type),
-                width: 132,
-                height: 198,
-                iconSize: 48,
-                borderRadius: 12,
+                width: 168,
+                height: 252,
+                iconSize: 56,
+                borderRadius: 14,
               ),
             ),
             const SizedBox(height: 16),
@@ -442,7 +493,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
               children: [
                 PillBadge(
                   icon: tmdbTypeIcon(result.type),
-                  label: result.type.label,
+                  label: strings.typeLabel(result.type),
                 ),
                 if (year != null)
                   Text('$year', style: theme.textTheme.bodyMedium),
@@ -462,23 +513,20 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
 
   /// Extra detail chips (runtime for movies, seasons/episodes for series).
   List<Widget> _detailsMeta(BuildContext context, TmdbDetails? details) {
+    final strings = context.strings;
     final style = Theme.of(context).textTheme.bodyMedium;
     if (details is TmdbMovieDetails && details.runtime != null) {
-      return [Text('${details.runtime} min', style: style)];
+      return [Text('${details.runtime} ${strings.minutes}', style: style)];
     }
     if (details is TmdbTvDetails) {
       final chips = <Widget>[];
       final seasons = details.numberOfSeasons;
       final episodes = details.numberOfEpisodes;
       if (seasons != null) {
-        chips.add(
-          Text('$seasons season${seasons == 1 ? '' : 's'}', style: style),
-        );
+        chips.add(Text(strings.seasons(seasons), style: style));
       }
       if (episodes != null) {
-        chips.add(
-          Text('$episodes episode${episodes == 1 ? '' : 's'}', style: style),
-        );
+        chips.add(Text(strings.episodes(episodes), style: style));
       }
       return chips;
     }
@@ -486,6 +534,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
   }
 
   Widget _buildActions(BuildContext context, ColorScheme cs) {
+    final strings = context.strings;
     if (_loading) {
       return const Center(
         child: Padding(
@@ -511,7 +560,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
           FilledButton.icon(
             onPressed: _load,
             icon: const Icon(Icons.refresh),
-            label: const Text('Retry'),
+            label: Text(strings.retry),
           ),
         ],
       );
@@ -523,11 +572,14 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
         children: [
           Icon(Icons.check_circle, color: cs.primary),
           const SizedBox(width: 8),
-          Text(
-            'Already in your library',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(color: cs.primary),
+          Flexible(
+            child: Text(
+              strings.alreadyInLibrary,
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(color: cs.primary),
+            ),
           ),
         ],
       );
@@ -542,7 +594,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.add),
-      label: const Text('Add to library'),
+      label: Text(strings.addToLibrary),
     );
   }
 }
