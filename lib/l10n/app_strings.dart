@@ -5,6 +5,7 @@ import '../models/import_error.dart';
 import '../models/media_item.dart';
 import '../models/tmdb_result.dart';
 import '../providers/settings_provider.dart';
+import '../services/stats_calculator.dart';
 import '../services/tmdb_client.dart';
 import 'app_language.dart';
 
@@ -83,6 +84,14 @@ class AppStrings {
     MediaKind.movie => _t('kindMovie'),
     MediaKind.series => _t('kindSeries'),
     MediaKind.book => _t('kindBook'),
+  };
+
+  /// Plural label of a kind ("Movies" / "Series" / "Books") — used by the
+  /// stats screen's count tiles and chart legends.
+  String kindPluralLabel(MediaKind kind) => switch (kind) {
+    MediaKind.movie => _t('scopeMovies'),
+    MediaKind.series => _t('scopeSeries'),
+    MediaKind.book => _t('scopeBooks'),
   };
 
   String statusLabel(MediaStatus status) => switch (status) {
@@ -164,6 +173,81 @@ class AppStrings {
 
   String get statsComingSoon => _t('statsComingSoon');
   String get statsDescription => _t('statsDescription');
+
+  // ── Phase 5: stats screen ──────────────────────────────────────────────────
+
+  String get statsOverview => _t('statsOverview');
+  String get statsStatusDistribution => _t('statsStatusDistribution');
+  String get statsCompletionRate => _t('statsCompletionRate');
+  String get statsEmptyTitle => _t('statsEmptyTitle');
+  String get statsEmptyMessage => _t('statsEmptyMessage');
+  String get statsLoadErrorTitle => _t('statsLoadErrorTitle');
+  String get statsOverTime => _t('statsOverTime');
+  String get statsOverTimeHint => _t('statsOverTimeHint');
+  String get statsWatchTime => _t('statsWatchTime');
+  String get statsWatchTimeHint => _t('statsWatchTimeHint');
+  String get statsWatchTimeNoData => _t('statsWatchTimeNoData');
+  String get statsPages => _t('statsPages');
+  String get statsPagesHint => _t('statsPagesHint');
+  String get statsNoCompletions => _t('statsNoCompletions');
+
+  /// Time-range chips of the second stats block.
+  String get range1Month => _t('range1Month');
+  String get range6Months => _t('range6Months');
+  String get range12Months => _t('range12Months');
+  String get rangeAll => _t('rangeAll');
+
+  /// Unit suffixes for the watch-time label.
+  String get hoursShort => _t('hoursShort');
+  String get minutesShort => _t('minutesShort');
+
+  /// Unit suffix for the pages stat.
+  String get pagesUnit => _t('pagesUnit');
+
+  /// Localized time-range label for [range].
+  String rangeLabel(StatsRange range) => switch (range) {
+    StatsRange.month => range1Month,
+    StatsRange.sixMonths => range6Months,
+    StatsRange.twelveMonths => range12Months,
+    StatsRange.all => rangeAll,
+  };
+
+  /// Localized short month name ("Jan", … "Dez") for chart axis labels.
+  String monthShort(int month) {
+    final names = _t('monthShort').split(',');
+    if (month < 1 || month > names.length) return '$month';
+    return names[month - 1];
+  }
+
+  /// Groups [value] with a thousands separator — "." in German, "," in
+  /// English (e.g. `1234` → `1.234` / `1,234`).
+  String number(int value) {
+    final digits = value.abs().toString();
+    final buffer = StringBuffer();
+    final separator = language == AppLanguage.de ? '.' : ',';
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(separator);
+      buffer.write(digits[i]);
+    }
+    return value < 0 ? '-$buffer' : buffer.toString();
+  }
+
+  /// "1.234 Seiten" / "1,234 pages".
+  String pagesCount(int count) => '${number(count)} $pagesUnit';
+
+  /// Human watch time: "42 Std. 15 Min." / "42 h 15 min", "42 Std." / "42 h",
+  /// "15 Min." / "15 min".
+  String watchTime(int minutes) {
+    final safe = minutes < 0 ? 0 : minutes;
+    final hours = safe ~/ 60;
+    final mins = safe % 60;
+    if (hours > 0 && mins > 0) return '$hours $hoursShort $mins $minutesShort';
+    if (hours > 0) return '$hours $hoursShort';
+    return '$mins $minutesShort';
+  }
+
+  /// A rounded completion rate, e.g. "50 %" / "50%".
+  String ratePercent(double value) => percentValue(value.round());
 
   // ───────────────────────────────────────────────────────────────────────────
   // login
@@ -517,6 +601,34 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'statsComingSoon': 'Statistik folgt bald',
     'statsDescription':
         'Verfolge, wie viel du über die Zeit schaust und liest.',
+    // stats screen (phase 5)
+    'statsOverview': 'Überblick',
+    'statsStatusDistribution': 'Status-Verteilung',
+    'statsCompletionRate': 'Abschlussquote',
+    'statsEmptyTitle': 'Noch keine Statistik',
+    'statsEmptyMessage':
+        'Füge Filme, Serien oder Bücher hinzu, um deine Statistik zu sehen.',
+    'statsLoadErrorTitle': 'Statistik konnte nicht geladen werden',
+    'statsOverTime': 'Abschlüsse über Zeit',
+    'statsOverTimeHint':
+        'Filme und Bücher nach Abschlussdatum, Serien-Folgen nach Sehdatum.',
+    'statsWatchTime': 'TV-Minuten',
+    'statsWatchTimeHint':
+        'Laufzeit gesehener Folgen und abgeschlossener Filme.',
+    'statsWatchTimeNoData': 'Noch keine Laufzeitdaten vorhanden.',
+    'statsNoCompletions': 'In diesem Zeitraum keine Abschlüsse.',
+    'statsPages': 'Seiten',
+    'statsPagesHint':
+        'Seitenzahl abgeschlossener Bücher – eine Näherung, da es keine '
+        'Lese-Historie gibt.',
+    'range1Month': '1 Monat',
+    'range6Months': '6 Monate',
+    'range12Months': '12 Monate',
+    'rangeAll': 'Gesamt',
+    'hoursShort': 'Std.',
+    'minutesShort': 'Min.',
+    'pagesUnit': 'Seiten',
+    'monthShort': 'Jan,Feb,Mär,Apr,Mai,Jun,Jul,Aug,Sep,Okt,Nov,Dez',
     // login
     'loginTagline':
         'Verfolge die Filme, Serien und Bücher, die du gesehen, geschaut '
@@ -732,6 +844,32 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     // stats
     'statsComingSoon': 'Stats coming soon',
     'statsDescription': 'Track how much you watch and read over time.',
+    // stats screen (phase 5)
+    'statsOverview': 'Overview',
+    'statsStatusDistribution': 'Status distribution',
+    'statsCompletionRate': 'Completion rate',
+    'statsEmptyTitle': 'No stats yet',
+    'statsEmptyMessage': 'Add movies, series or books to see your stats.',
+    'statsLoadErrorTitle': 'Could not load your stats',
+    'statsOverTime': 'Completions over time',
+    'statsOverTimeHint':
+        'Movies and books by completion date, series episodes by watch date.',
+    'statsWatchTime': 'TV minutes',
+    'statsWatchTimeHint': 'Runtime of watched episodes and completed movies.',
+    'statsWatchTimeNoData': 'No runtime data available yet.',
+    'statsNoCompletions': 'No completions in this period.',
+    'statsPages': 'Pages',
+    'statsPagesHint':
+        'Page count of completed books — an approximation, since there is no '
+        'reading history.',
+    'range1Month': '1 month',
+    'range6Months': '6 months',
+    'range12Months': '12 months',
+    'rangeAll': 'All time',
+    'hoursShort': 'h',
+    'minutesShort': 'min',
+    'pagesUnit': 'pages',
+    'monthShort': 'Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec',
     // login
     'loginTagline':
         'Track the movies, series and books you have seen, watched and read.',

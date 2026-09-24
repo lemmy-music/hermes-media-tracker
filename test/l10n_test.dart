@@ -3,6 +3,7 @@ import 'package:media_tracker/l10n/app_language.dart';
 import 'package:media_tracker/l10n/app_strings.dart';
 import 'package:media_tracker/models/media_item.dart';
 import 'package:media_tracker/models/tmdb_result.dart';
+import 'package:media_tracker/services/stats_calculator.dart';
 import 'package:media_tracker/services/tmdb_client.dart';
 
 void main() {
@@ -201,6 +202,69 @@ void main() {
         expect(english.trim(), isNotEmpty);
         expect(german, isNot(english));
       }
+    });
+  });
+
+  group('stats strings (phase 5)', () {
+    test('every new stats string exists in both languages', () {
+      const de = AppStrings(AppLanguage.de);
+      const en = AppStrings(AppLanguage.en);
+      final pairs = <(String, String)>[
+        (de.statsOverview, en.statsOverview),
+        (de.statsStatusDistribution, en.statsStatusDistribution),
+        (de.statsCompletionRate, en.statsCompletionRate),
+        (de.statsEmptyTitle, en.statsEmptyTitle),
+        (de.statsEmptyMessage, en.statsEmptyMessage),
+        (de.statsLoadErrorTitle, en.statsLoadErrorTitle),
+        (de.statsOverTime, en.statsOverTime),
+        (de.statsWatchTime, en.statsWatchTime),
+        (de.statsWatchTimeNoData, en.statsWatchTimeNoData),
+        (de.statsPages, en.statsPages),
+        (de.range1Month, en.range1Month),
+        (de.range6Months, en.range6Months),
+        (de.range12Months, en.range12Months),
+        (de.rangeAll, en.rangeAll),
+        (de.hoursShort, en.hoursShort),
+        (de.minutesShort, en.minutesShort),
+        (de.statsNoCompletions, en.statsNoCompletions),
+      ];
+      for (final (german, english) in pairs) {
+        expect(german.trim(), isNotEmpty);
+        expect(english.trim(), isNotEmpty);
+        expect(german, isNot(english));
+      }
+    });
+
+    test('range labels and month abbreviations are localized', () {
+      const de = AppStrings(AppLanguage.de);
+      const en = AppStrings(AppLanguage.en);
+
+      expect(de.rangeLabel(StatsRange.all), 'Gesamt');
+      expect(en.rangeLabel(StatsRange.all), 'All time');
+      expect(de.rangeLabel(StatsRange.month), '1 Monat');
+      expect(en.rangeLabel(StatsRange.sixMonths), '6 months');
+
+      expect(de.monthShort(1), 'Jan');
+      expect(de.monthShort(3), 'Mär');
+      expect(en.monthShort(3), 'Mar');
+    });
+
+    test('thousands and watch-time formatting', () {
+      const de = AppStrings(AppLanguage.de);
+      const en = AppStrings(AppLanguage.en);
+
+      expect(de.number(1234), '1.234');
+      expect(en.number(1234), '1,234');
+      expect(de.number(999), '999');
+      expect(en.number(1234567), '1,234,567');
+
+      expect(de.watchTime(0), '0 Min.');
+      expect(de.watchTime(15), '15 Min.');
+      expect(de.watchTime(42 * 60), '42 Std.');
+      expect(de.watchTime(42 * 60 + 15), '42 Std. 15 Min.');
+      expect(en.watchTime(42 * 60 + 15), '42 h 15 min');
+      expect(de.pagesCount(1234), '1.234 Seiten');
+      expect(en.pagesCount(1234), '1,234 pages');
     });
   });
 }

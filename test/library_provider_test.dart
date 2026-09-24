@@ -216,7 +216,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
 
   group('MediaRepository.updateMetadata', () {
-    test('sends exactly the 7 metadata fields, no tracking state', () async {
+    test('sends exactly the metadata fields, no tracking state', () async {
       final requests = <http.Request>[];
       final client = SupabaseClient(
         'https://example.supabase.co',
@@ -245,6 +245,7 @@ void main() {
           posterUrl: 'https://image.tmdb.org/t/p/w342/x.jpg',
           totalSeasons: 1,
           totalEpisodes: 3,
+          runtime: 178,
           // Deliberately set — none of these may reach the request body.
           status: MediaStatus.completed,
           progressPercent: 100,
@@ -267,6 +268,7 @@ void main() {
         'poster_url',
         'total_seasons',
         'total_episodes',
+        'runtime',
       });
 
       for (final forbidden in const <String>[
@@ -296,6 +298,7 @@ void main() {
       expect(body['poster_url'], 'https://image.tmdb.org/t/p/w342/x.jpg');
       expect(body['total_seasons'], 1);
       expect(body['total_episodes'], 3);
+      expect(body['runtime'], 178);
       // The stored row is returned unchanged.
       expect(stored.title, 'Der Herr der Ringe');
     });

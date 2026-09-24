@@ -452,6 +452,7 @@ const Set<String> kMetadataUpdateFields = <String>{
   'poster_url',
   'total_seasons',
   'total_episodes',
+  'runtime',
 };
 
 /// Builds the PostgREST payload for [MediaRepository.updateMetadata].
@@ -468,6 +469,7 @@ Map<String, dynamic> metadataUpdatePayload(MediaItem item) {
     'poster_url': item.posterUrl,
     'total_seasons': item.totalSeasons,
     'total_episodes': item.totalEpisodes,
+    'runtime': item.runtime,
   };
 }
 

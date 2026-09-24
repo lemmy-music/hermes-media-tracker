@@ -198,6 +198,7 @@ class TmdbMovieDetails extends TmdbDetails {
     posterUrl: posterUrl,
     externalSource: 'tmdb',
     externalId: '$id',
+    runtime: runtime,
   );
 }
 

@@ -24,6 +24,9 @@ dependencies:
   http: ^1.2.0
   file_picker: ^13.1.0
 
+  # Charts for the stats screen (donut + stacked bar).
+  fl_chart: ^0.68.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

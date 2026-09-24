@@ -67,6 +67,7 @@ class MediaItem {
     this.isbn,
     this.totalSeasons,
     this.totalEpisodes,
+    this.runtime,
     this.status = MediaStatus.planned,
     this.progressPercent,
     this.progressCurrent,
@@ -93,6 +94,7 @@ class MediaItem {
       isbn: jsonString(map['isbn']),
       totalSeasons: jsonInt(map['total_seasons']),
       totalEpisodes: jsonInt(map['total_episodes']),
+      runtime: jsonInt(map['runtime']),
       status: map['status'] == null
           ? MediaStatus.planned
           : MediaStatus.fromWire(map['status']),
@@ -128,6 +130,13 @@ class MediaItem {
   final int? totalSeasons;
   final int? totalEpisodes;
 
+  /// Runtime in minutes — **movies only** (series/books leave this `null`;
+  /// a series' episode runtimes live on `episodes.runtime`).
+  ///
+  /// Backfilled by the TMDB detail request when an item is added and by the
+  /// metadata refresh; existing rows stay `null` until then.
+  final int? runtime;
+
   // Tracking state.
   final MediaStatus status;
 
@@ -160,6 +169,7 @@ class MediaItem {
     String? isbn,
     int? totalSeasons,
     int? totalEpisodes,
+    int? runtime,
     MediaStatus? status,
     double? progressPercent,
     int? progressCurrent,
@@ -183,6 +193,7 @@ class MediaItem {
       isbn: isbn ?? this.isbn,
       totalSeasons: totalSeasons ?? this.totalSeasons,
       totalEpisodes: totalEpisodes ?? this.totalEpisodes,
+      runtime: runtime ?? this.runtime,
       status: status ?? this.status,
       progressPercent: progressPercent ?? this.progressPercent,
       progressCurrent: progressCurrent ?? this.progressCurrent,
@@ -214,6 +225,7 @@ class MediaItem {
       isbn: isbn,
       totalSeasons: totalSeasons,
       totalEpisodes: totalEpisodes,
+      runtime: runtime,
       status: status,
       progressPercent: progressPercent,
       progressCurrent: progressCurrent,
@@ -242,6 +254,7 @@ class MediaItem {
       if (isbn != null) 'isbn': isbn,
       if (totalSeasons != null) 'total_seasons': totalSeasons,
       if (totalEpisodes != null) 'total_episodes': totalEpisodes,
+      if (runtime != null) 'runtime': runtime,
       'status': status.wire,
       if (progressPercent != null) 'progress_percent': progressPercent,
       if (progressCurrent != null) 'progress_current': progressCurrent,

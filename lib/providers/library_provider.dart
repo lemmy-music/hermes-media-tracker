@@ -803,6 +803,11 @@ class LibraryProvider extends ChangeNotifier {
       if (title.isEmpty) return false;
 
       final isSeries = details is TmdbTvDetails;
+      // `runtime` is a movie-only metadata field (series runtimes live on the
+      // episodes) — refreshed together with the rest of the snapshot.
+      final runtime = details is TmdbMovieDetails
+          ? details.runtime
+          : item.runtime;
       await _repository.updateMetadata(
         item.copyWith(
           title: title,
@@ -814,6 +819,7 @@ class LibraryProvider extends ChangeNotifier {
           totalEpisodes: isSeries
               ? details.numberOfEpisodes
               : item.totalEpisodes,
+          runtime: runtime,
         ),
       );
       // A series also carries localized episode metadata — refresh it in the

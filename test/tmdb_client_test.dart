@@ -121,8 +121,7 @@ void main() {
       expect(requestUri.queryParameters['language'], 'de-DE');
     });
 
-    test('the constructor language is the default for every request',
-        () async {
+    test('the constructor language is the default for every request', () async {
       late Uri requestUri;
       final client = TmdbClient(
         httpClient: MockClient((request) async {
@@ -266,6 +265,8 @@ void main() {
       expect(details.runtime, 148);
       expect(details.year, 2010);
       expect(details.toMediaItem().kind, MediaKind.movie);
+      // The runtime is stored on the library item for the stats screen.
+      expect(details.toMediaItem().runtime, 148);
     });
 
     test('fetchTv parses season / episode counts', () async {
