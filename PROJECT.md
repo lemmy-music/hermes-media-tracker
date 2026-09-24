@@ -25,7 +25,7 @@ Track three media types with different granularity:
 
 ## Platform
 - **Flutter Web app**, deployed to **GitHub Pages** (debug/test loop).
-- UI language: **English**.
+- UI language: **German / English toggle** in settings (German is the default). The toggle also switches TMDB metadata and search language; OpenLibrary is not localized (see known limitations).
 
 ## Repo
 - `https://github.com/lemmy-music/hermes-media-tracker` (public, `main`)
@@ -38,11 +38,15 @@ Track three media types with different granularity:
 - [x] **Phase 0 — Setup:** Flutter web project skeleton, GitHub Actions → Pages pipeline, app shell (navigation), theme.
 - [x] **Phase 1a — Data layer:** Supabase project + schema (media items, status/progress, episodes), magic-link auth, models + repository, client wiring, library list (loading / empty / error / list).
 - [ ] **Phase 1b — Data layer:** JSON export/import of local state.
-- [~] **Phase 2 — Metadata:** TMDB client (search + details + seasons/episodes) ✓, **OpenLibrary book client** (search + details + ISBN lookup) ✓, search & detail UI (movies/series/books) ✓; season/episode browser follows in Phase 4.
-- [ ] **Phase 3 — Tracking UI:** library list/grid, add media, status toggles, progress controls with timestamps.
-- [ ] **Phase 4 — Series episodes:** season/episode browsing, per-episode check-off, bulk "mark season".
+- [~] **Phase 2 — Metadata:** TMDB client (search + details + seasons/episodes) ✓, **OpenLibrary book client** (search + details + ISBN lookup) ✓, search & detail UI (movies/series/books) ✓, DE/EN language toggle ✓; season/episode browser follows in Phase 3b.
+- [ ] **Phase 3a — Tracking UI (movies & books):** status (planned / in progress / completed / dropped), progress percent for movies, page-based progress for books, started/completed timestamps.
+- [ ] **Phase 3b — Series tracking (episodes):** season/episode browsing, per-episode check-off, bulk "mark season". The series status and progress are **derived** from the checked episodes (e.g. 10/19 → 53 % and "in progress"; all → "completed").
 - [ ] **Phase 5 — Polish:** filters/sorting, stats, empty states, offline behaviour.
 - [ ] **Phase 6 — Bonus:** ISBN scanner (`mobile_scanner`).
+
+## Known limitations / backlog
+
+- **Book titles are not localized.** OpenLibrary exposes titles at *work* level, which is usually the original title ("The Lord of the Rings", not "Der Herr der Ringe"); German titles only exist on the individual *editions*. A localized book title would need an extra editions lookup per book. *Deliberately deferred to the very end — current behaviour is acceptable.*
 
 ## Open decisions
 1. ~~Supabase project credentials + whether to use Supabase Auth (login) or a single-user setup.~~ → Project `vqpkejsxfvaovhdomllw`; **magic-link (email) auth**, RLS is owner-only.
