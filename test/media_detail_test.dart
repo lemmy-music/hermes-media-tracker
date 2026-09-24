@@ -332,11 +332,16 @@ MediaItem _series({
 );
 
 /// Seeds [count] episodes of [seasonNumber] for [mediaItemId].
+///
+/// [overview] and [stillUrl] are applied to every seeded episode (used by the
+/// episode-description tests); both default to `null`.
 List<Episode> _episodes(
   String mediaItemId, {
   int seasonNumber = 1,
   int count = 4,
   int watched = 0,
+  String? overview,
+  String? stillUrl,
 }) => [
   for (var i = 1; i <= count; i++)
     Episode(
@@ -345,7 +350,9 @@ List<Episode> _episodes(
       seasonNumber: seasonNumber,
       episodeNumber: i,
       name: 'Episode $i',
+      overview: overview,
       airDate: DateTime.utc(2004, 9, i),
+      stillUrl: stillUrl,
       runtime: 42,
       watched: i <= watched,
       watchedAt: i <= watched ? DateTime.utc(2026, 1, 1) : null,
@@ -837,6 +844,102 @@ void main() {
         findsOneWidget,
       );
       expect(inDetail(find.text('0 von 4 Folgen')), findsOneWidget);
+
+      // The localized description fallback appears when a row is expanded.
+      await tester.tap(find.byKey(MediaDetailScreen.episodeTileKey(1, 1)));
+      await tester.pumpAndSettle();
+      expect(
+        inDetail(find.text('Keine Beschreibung vorhanden.')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('tapping a row expands and collapses the description', (
+      tester,
+    ) async {
+      const synopsis = 'Jack wakes up on the beach with no memory.';
+      final repository = _FakeRepo([
+        _series(),
+      ], episodes: _episodes('series-1', overview: synopsis));
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+      );
+
+      // Hidden initially …
+      expect(inDetail(find.text(synopsis)), findsNothing);
+
+      // … visible after the first tap on the row …
+      await tester.tap(find.byKey(MediaDetailScreen.episodeTileKey(1, 1)));
+      await tester.pumpAndSettle();
+      expect(inDetail(find.text(synopsis)), findsOneWidget);
+      expect(
+        find.byKey(MediaDetailScreen.episodeDescriptionKey(1, 1)),
+        findsOneWidget,
+      );
+
+      // … and hidden again after the second tap.
+      await tester.tap(find.byKey(MediaDetailScreen.episodeTileKey(1, 1)));
+      await tester.pumpAndSettle();
+      expect(inDetail(find.text(synopsis)), findsNothing);
+      expect(
+        find.byKey(MediaDetailScreen.episodeDescriptionKey(1, 1)),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the checkbox toggles watched independently of expanding', (
+      tester,
+    ) async {
+      const synopsis = 'The survivors explore the wreckage of the plane.';
+      final repository = _FakeRepo([
+        _series(),
+      ], episodes: _episodes('series-1', overview: synopsis));
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+      );
+      final writesBefore = repository.writes.length;
+
+      // Expanding the row does not touch the watched state (no write).
+      await tester.tap(find.byKey(MediaDetailScreen.episodeTileKey(1, 1)));
+      await tester.pumpAndSettle();
+      expect(inDetail(find.text(synopsis)), findsOneWidget);
+      expect(repository.writes.length, writesBefore);
+      expect(inDetail(find.text('0 of 4 episodes')), findsOneWidget);
+
+      // The checkbox still toggles watched while the description is open.
+      await tester.tap(find.byKey(MediaDetailScreen.episodeCheckboxKey(1, 1)));
+      await tester.pumpAndSettle();
+      expect(repository.writes.last['progress_percent'], 25);
+      expect(inDetail(find.text('1 of 4 episodes')), findsOneWidget);
+      // The expanded description stays open across the checkbox toggle.
+      expect(inDetail(find.text(synopsis)), findsOneWidget);
+    });
+
+    testWidgets('an episode without a description shows the fallback', (
+      tester,
+    ) async {
+      final repository = _FakeRepo(
+        [_series()],
+        // No overview → the localized fallback must be shown instead.
+        episodes: _episodes('series-1'),
+      );
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+      );
+
+      expect(inDetail(find.text('No description available.')), findsNothing);
+      await tester.tap(find.byKey(MediaDetailScreen.episodeTileKey(1, 1)));
+      await tester.pumpAndSettle();
+      expect(inDetail(find.text('No description available.')), findsOneWidget);
     });
   });
 

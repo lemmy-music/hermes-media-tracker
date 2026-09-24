@@ -56,6 +56,15 @@ class MediaDetailScreen extends StatelessWidget {
   static Key episodeCheckboxKey(int season, int episode) =>
       Key('series-episode-$season-$episode');
 
+  /// Key of the tappable row of `S{season}E{episode}` (expands the
+  /// description — it no longer toggles the watched state).
+  static Key episodeTileKey(int season, int episode) =>
+      Key('series-episode-tile-$season-$episode');
+
+  /// Key of the expanded description panel of `S{season}E{episode}`.
+  static Key episodeDescriptionKey(int season, int episode) =>
+      Key('series-episode-description-$season-$episode');
+
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryProvider>();
@@ -237,6 +246,23 @@ class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
 
   /// `true` while a mutation is in flight (disables the bulk actions).
   bool _busy = false;
+
+  /// Episodes whose description is currently expanded, keyed by
+  /// `"{season}-{episode}"`. Tapping a row toggles one of these — tapping a
+  /// row deliberately no longer toggles the *watched* state (that is the
+  /// checkbox's job, so the primary action stays unambiguous).
+  final Set<String> _expanded = <String>{};
+
+  String _expandedKey(Episode episode) =>
+      '${episode.seasonNumber}-${episode.episodeNumber}';
+
+  /// Collapses/expands the description of [episode]. No persistence involved.
+  void _toggleExpanded(Episode episode) {
+    final key = _expandedKey(episode);
+    setState(() {
+      if (!_expanded.remove(key)) _expanded.add(key);
+    });
+  }
 
   MediaItem get item => widget.item;
 
@@ -540,6 +566,10 @@ class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
 
   /// One episode: watched checkbox, number + title, air date / runtime and an
   /// optional still thumbnail.
+  ///
+  /// Interaction is split on purpose: the **checkbox** toggles the watched
+  /// state (the primary action, unchanged), while tapping the **row** expands
+  /// or collapses the episode description (which used to toggle watched).
   Widget _episodeTile(BuildContext context, Episode episode) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
@@ -556,13 +586,17 @@ class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
       if (episode.runtime != null) '${episode.runtime} ${strings.minutes}',
     ];
 
-    return InkWell(
-      onTap: () => _toggleEpisode(episode, !episode.watched),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
+    final expanded = _expanded.contains(_expandedKey(episode));
+    final hasStill = episode.stillUrl != null && episode.stillUrl!.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Primary action: the checkbox toggles the watched state. It sits
+            // *outside* the tappable row so the two gestures never overlap.
             Checkbox(
               key: MediaDetailScreen.episodeCheckboxKey(
                 episode.seasonNumber,
@@ -573,40 +607,130 @@ class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
                   ? null
                   : (value) => _toggleEpisode(episode, value ?? false),
             ),
-            if (episode.stillUrl != null && episode.stillUrl!.isNotEmpty) ...[
-              PosterThumbnail(
-                url: episode.stillUrl,
-                placeholderIcon: Icons.movie_outlined,
-                width: 72,
-                height: 44,
-                iconSize: 20,
-                borderRadius: 6,
-              ),
-              const SizedBox(width: 10),
-            ],
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      fontWeight: episode.watched
-                          ? FontWeight.w400
-                          : FontWeight.w500,
-                      color: episode.watched ? cs.onSurfaceVariant : null,
-                    ),
+              child: InkWell(
+                key: MediaDetailScreen.episodeTileKey(
+                  episode.seasonNumber,
+                  episode.episodeNumber,
+                ),
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _toggleExpanded(episode),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 8,
+                    horizontal: 4,
                   ),
-                  if (details.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      details.join(' · '),
-                      style: theme.textTheme.bodySmall?.copyWith(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (hasStill) ...[
+                        PosterThumbnail(
+                          url: episode.stillUrl,
+                          placeholderIcon: Icons.movie_outlined,
+                          width: 72,
+                          height: 44,
+                          iconSize: 20,
+                          borderRadius: 6,
+                        ),
+                        const SizedBox(width: 10),
+                      ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: theme.textTheme.bodyLarge?.copyWith(
+                                fontWeight: episode.watched
+                                    ? FontWeight.w400
+                                    : FontWeight.w500,
+                                color: episode.watched
+                                    ? cs.onSurfaceVariant
+                                    : null,
+                              ),
+                            ),
+                            if (details.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                details.join(' · '),
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        expanded ? Icons.expand_less : Icons.expand_more,
                         color: cs.onSurfaceVariant,
                       ),
-                    ),
-                  ],
-                ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        // The description collapses away entirely (not just fades out) so it
+        // is absent from the tree while hidden.
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          alignment: Alignment.topCenter,
+          child: expanded
+              ? _episodeDescription(context, episode)
+              : const SizedBox(width: double.infinity, height: 0),
+        ),
+      ],
+    );
+  }
+
+  /// Expanded panel of an episode: a larger still (when available) plus the
+  /// full description, or the localized fallback when there is none.
+  Widget _episodeDescription(BuildContext context, Episode episode) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final strings = context.strings;
+    final description = episode.overview?.trim();
+    final hasDescription = description != null && description.isNotEmpty;
+    final hasStill = episode.stillUrl != null && episode.stillUrl!.isNotEmpty;
+
+    return Padding(
+      key: MediaDetailScreen.episodeDescriptionKey(
+        episode.seasonNumber,
+        episode.episodeNumber,
+      ),
+      padding: const EdgeInsets.only(left: 4, right: 4, top: 8, bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (hasStill) ...[
+              Center(
+                child: PosterThumbnail(
+                  url: episode.stillUrl,
+                  placeholderIcon: Icons.movie_outlined,
+                  width: 240,
+                  height: 135,
+                  iconSize: 40,
+                  borderRadius: 10,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            // Long synopses wrap fully; the surrounding list provides the
+            // scrolling, so the text is never clipped.
+            Text(
+              hasDescription ? description : strings.noEpisodeDescription,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: hasDescription ? null : cs.onSurfaceVariant,
+                fontStyle: hasDescription ? null : FontStyle.italic,
               ),
             ),
           ],

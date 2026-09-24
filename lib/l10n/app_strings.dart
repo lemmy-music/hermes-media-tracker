@@ -297,6 +297,9 @@ class AppStrings {
   /// "Aired on" label in front of an episode's air date.
   String get airedOn => _t('airedOn');
 
+  /// Fallback shown when an episode has no synopsis (`overview`).
+  String get noEpisodeDescription => _t('noEpisodeDescription');
+
   /// Runtime label of an episode.
   String get runtimeLabel => _t('runtimeLabel');
 
@@ -504,6 +507,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'loadingEpisodesProgress': 'Lade Folgen… ({done}/{total})',
     'noEpisodes': 'Keine Folgen gefunden',
     'airedOn': 'Ausgestrahlt am',
+    'noEpisodeDescription': 'Keine Beschreibung vorhanden.',
     'runtimeLabel': 'Laufzeit',
     'refreshEpisodes': 'Folgen aktualisieren',
     'episodesProgressLabel': '{watched} von {total} Folgen',
@@ -674,6 +678,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'loadingEpisodesProgress': 'Loading episodes… ({done}/{total})',
     'noEpisodes': 'No episodes found',
     'airedOn': 'Aired on',
+    'noEpisodeDescription': 'No description available.',
     'runtimeLabel': 'Runtime',
     'refreshEpisodes': 'Refresh episodes',
     'episodesProgressLabel': '{watched} of {total} episodes',
