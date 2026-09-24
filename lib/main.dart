@@ -1,27 +1,64 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'config/app_config.dart';
+import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
-import 'screens/library_screen.dart';
-import 'screens/search_screen.dart';
-import 'screens/stats_screen.dart';
+import 'repositories/media_repository.dart';
+import 'widgets/auth_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   final themeProvider = ThemeProvider();
   await themeProvider.load();
-  runApp(MediaTrackerApp(themeProvider: themeProvider));
+
+  await Supabase.initialize(
+    url: AppConfig.supabaseUrl,
+    // The publishable key replaces the legacy "anon" key — public by design.
+    publishableKey: AppConfig.supabaseAnonKey,
+  );
+
+  final authProvider = SupabaseAuthProvider();
+  // Restore the persisted session in the background; the AuthGate shows a
+  // loading indicator until that resolves.
+  unawaited(authProvider.init());
+
+  runApp(
+    MediaTrackerApp(
+      themeProvider: themeProvider,
+      authProvider: authProvider,
+    ),
+  );
 }
 
 class MediaTrackerApp extends StatelessWidget {
-  const MediaTrackerApp({super.key, required this.themeProvider});
+  const MediaTrackerApp({
+    super.key,
+    required this.themeProvider,
+    required this.authProvider,
+    this.repository,
+  });
 
   final ThemeProvider themeProvider;
+  final AuthProvider authProvider;
+
+  /// Overridable so widget tests can run without a live Supabase backend.
+  final MediaRepository? repository;
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<ThemeProvider>.value(
-      value: themeProvider,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ThemeProvider>.value(value: themeProvider),
+        ChangeNotifierProvider<AuthProvider>.value(value: authProvider),
+        Provider<MediaRepository>(
+          create: (_) => repository ?? MediaRepository(),
+        ),
+      ],
       child: Consumer<ThemeProvider>(
         builder: (_, theme, _) => MaterialApp(
           title: 'Media Tracker',
@@ -41,56 +78,8 @@ class MediaTrackerApp extends StatelessWidget {
               brightness: Brightness.dark,
             ),
           ),
-          home: const MainNavigation(),
+          home: const AuthGate(),
         ),
-      ),
-    );
-  }
-}
-
-/// Root shell with the three bottom-navigation tabs.
-class MainNavigation extends StatefulWidget {
-  const MainNavigation({super.key});
-
-  @override
-  State<MainNavigation> createState() => _MainNavigationState();
-}
-
-class _MainNavigationState extends State<MainNavigation> {
-  // Library is the start tab.
-  int _selectedIndex = 0;
-
-  static const List<Widget> _screens = [
-    LibraryScreen(),
-    SearchScreen(),
-    StatsScreen(),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: _screens[_selectedIndex],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) =>
-            setState(() => _selectedIndex = index),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.video_library_outlined),
-            selectedIcon: Icon(Icons.video_library),
-            label: 'Library',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.search),
-            selectedIcon: Icon(Icons.search),
-            label: 'Search',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            selectedIcon: Icon(Icons.insights),
-            label: 'Stats',
-          ),
-        ],
       ),
     );
   }

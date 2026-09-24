@@ -35,8 +35,9 @@ Track three media types with different granularity:
 
 ## Roadmap
 
-- [ ] **Phase 0 — Setup:** Flutter web project skeleton, GitHub Actions → Pages pipeline, app shell (navigation), theme.
-- [ ] **Phase 1 — Data layer:** Supabase project + schema (media items, status/progress, episodes), client wiring, JSON export/import of local state.
+- [x] **Phase 0 — Setup:** Flutter web project skeleton, GitHub Actions → Pages pipeline, app shell (navigation), theme.
+- [x] **Phase 1a — Data layer:** Supabase project + schema (media items, status/progress, episodes), magic-link auth, models + repository, client wiring, library list (loading / empty / error / list).
+- [ ] **Phase 1b — Data layer:** JSON export/import of local state.
 - [ ] **Phase 2 — Metadata:** TMDB client (search + details + seasons/episodes), book API client, search & detail UI.
 - [ ] **Phase 3 — Tracking UI:** library list/grid, add media, status toggles, progress controls with timestamps.
 - [ ] **Phase 4 — Series episodes:** season/episode browsing, per-episode check-off, bulk "mark season".
@@ -44,6 +45,6 @@ Track three media types with different granularity:
 - [ ] **Phase 6 — Bonus:** ISBN scanner (`mobile_scanner`).
 
 ## Open decisions
-1. Supabase project credentials + whether to use Supabase Auth (login) or a single-user setup.
+1. ~~Supabase project credentials + whether to use Supabase Auth (login) or a single-user setup.~~ → Project `vqpkejsxfvaovhdomllw`; **magic-link (email) auth**, RLS is owner-only.
 2. TMDB API key.
 3. Book metadata source: OpenLibrary vs Google Books.

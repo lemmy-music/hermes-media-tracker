@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 
 /// Central settings entry point (gear icon) shown in every screen's AppBar.
 ///
-/// Opens a modal bottom sheet containing the Dark-Mode toggle.
+/// Opens a modal bottom sheet with the signed-in account (sign out) and the
+/// Dark-Mode toggle.
 class SettingsButton extends StatelessWidget {
   const SettingsButton({super.key});
 
@@ -36,8 +38,10 @@ class _SettingsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final themeProvider = context.watch<ThemeProvider>();
+    final authProvider = context.watch<AuthProvider>();
     final isDark =
         themeProvider.effectivelyDark(MediaQuery.of(context).platformBrightness);
+    final email = authProvider.email;
 
     return SafeArea(
       child: Column(
@@ -56,6 +60,16 @@ class _SettingsSheet extends StatelessWidget {
             ),
           ),
           const Divider(height: 1),
+          ListTile(
+            leading: Icon(Icons.account_circle_outlined, color: cs.primary),
+            title: Text(
+              email ?? 'Signed in',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: const Text('Signed in with a magic link'),
+          ),
+          const Divider(height: 1),
           SwitchListTile(
             secondary: Icon(
               isDark ? Icons.dark_mode : Icons.light_mode,
@@ -69,6 +83,19 @@ class _SettingsSheet extends StatelessWidget {
             onChanged: (value) => themeProvider.setDark(value),
           ),
           const Divider(height: 1),
+          ListTile(
+            leading: Icon(Icons.logout, color: cs.error),
+            title: Text(
+              'Sign out',
+              style: TextStyle(color: cs.error),
+            ),
+            onTap: () {
+              // Grab the provider before the sheet (and its context) is gone.
+              final auth = context.read<AuthProvider>();
+              Navigator.of(context).pop();
+              auth.signOut();
+            },
+          ),
           const SizedBox(height: 8),
         ],
       ),

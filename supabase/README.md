@@ -26,3 +26,26 @@ without an authenticated session.
 Magic links are sent by Supabase's built-in mailer, which is rate limited
 (a few mails per hour on the free tier). One sign-in per device is normally
 enough — the session is persisted and refreshed automatically.
+
+## 3. Client wiring
+
+The Flutter client (`lib/config/app_config.dart`) ships with the project URL
+and the **publishable** key as compile-time defaults, so no extra setup is
+needed for a normal build. Both are public by design: RLS decides what an
+unauthenticated request may see (nothing).
+
+Override for a different project / environment:
+
+```sh
+flutter run -d chrome \
+  --dart-define=SUPABASE_URL=https://xxx.supabase.co \
+  --dart-define=SUPABASE_ANON_KEY=sb_publishable_xxx \
+  --dart-define=AUTH_REDIRECT_URL=http://localhost:5555/
+```
+
+`AUTH_REDIRECT_URL` defaults to the current origin + path, which already covers
+GitHub Pages and local dev — but it must still be listed under
+**Authentication → URL Configuration → Redirect URLs**, otherwise Supabase
+silently falls back to the Site URL.
+
+Never put an `sb_secret_...` / service-role key in the client: it bypasses RLS.
