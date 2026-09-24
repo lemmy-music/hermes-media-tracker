@@ -5,6 +5,7 @@ import '../models/import_error.dart';
 import '../models/media_item.dart';
 import '../models/tmdb_result.dart';
 import '../providers/settings_provider.dart';
+import '../services/library_filter.dart';
 import '../services/stats_calculator.dart';
 import '../services/tmdb_client.dart';
 import 'app_language.dart';
@@ -120,6 +121,65 @@ class AppStrings {
   String get libraryLoadErrorTitle => _t('libraryLoadErrorTitle');
   String get libraryEmptyTitle => _t('libraryEmptyTitle');
   String get libraryEmptyMessage => _t('libraryEmptyMessage');
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // library search / filter / sort (Phase 5b)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// Placeholder of the library search field.
+  String get librarySearchHint => _t('librarySearchHint');
+
+  /// Tooltip / label of the filter controls.
+  String get filterLabel => _t('filterLabel');
+
+  /// Tooltip / heading of the sort menu.
+  String get sortBy => _t('sortBy');
+
+  /// Sort option: `created_at` descending (default).
+  String get sortRecentlyAdded => _t('sortRecentlyAdded');
+
+  /// Sort option: title A–Z (case-insensitive).
+  String get sortTitle => _t('sortTitle');
+
+  /// Sort option: release year descending.
+  String get sortReleaseYear => _t('sortReleaseYear');
+
+  /// Sort option: progress descending.
+  String get sortProgress => _t('sortProgress');
+
+  /// Localized label of a sort option.
+  String sortLabel(LibrarySort sort) => switch (sort) {
+    LibrarySort.recentlyAdded => sortRecentlyAdded,
+    LibrarySort.titleAZ => sortTitle,
+    LibrarySort.releaseYear => sortReleaseYear,
+    LibrarySort.progress => sortProgress,
+  };
+
+  /// Localized label of a media-type filter chip (`all` → "All").
+  String libraryKindFilterLabel(LibraryKindFilter filter) {
+    final kind = filter.kind;
+    return kind == null ? _t('scopeAll') : kindPluralLabel(kind);
+  }
+
+  /// Localized label of a status filter chip (`all` → "All").
+  String libraryStatusFilterLabel(LibraryStatusFilter filter) {
+    final status = filter.status;
+    return status == null ? _t('scopeAll') : statusLabel(status);
+  }
+
+  /// Empty state when the library has items but none match the search/filters.
+  String get libraryNoMatchesTitle => _t('libraryNoMatchesTitle');
+  String get libraryNoMatchesMessage => _t('libraryNoMatchesMessage');
+
+  /// Action / tooltip that clears the search text and every filter.
+  String get resetFilters => _t('resetFilters');
+
+  /// Result counter, e.g. "12 Treffer von 48" / "12 results of 48".
+  /// Singular-aware (`{shown}` == 1).
+  String libraryResultCount(int shown, int total) => _tParam(
+    shown == 1 ? 'libraryResultCountOne' : 'libraryResultCountMany',
+    {'shown': '$shown', 'total': '$total'},
+  );
 
   // ───────────────────────────────────────────────────────────────────────────
   // metadata refresh (language change / manual)
@@ -572,6 +632,20 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'libraryEmptyTitle': 'Deine Bibliothek ist leer',
     'libraryEmptyMessage':
         'Filme, Serien und Bücher, die du verfolgst, erscheinen hier.',
+    // library search / filter / sort (phase 5b)
+    'librarySearchHint': 'Titel durchsuchen',
+    'filterLabel': 'Filtern',
+    'sortBy': 'Sortieren',
+    'sortRecentlyAdded': 'Kürzlich hinzugefügt',
+    'sortTitle': 'Titel A–Z',
+    'sortReleaseYear': 'Erscheinungsjahr',
+    'sortProgress': 'Fortschritt',
+    'libraryNoMatchesTitle': 'Keine Treffer',
+    'libraryNoMatchesMessage':
+        'Keine Einträge passen zu deiner Suche oder deinen Filtern.',
+    'resetFilters': 'Filter zurücksetzen',
+    'libraryResultCountOne': '{shown} Treffer von {total}',
+    'libraryResultCountMany': '{shown} Treffer von {total}',
     // metadata refresh
     'metadataRefreshAction': 'Metadaten aktualisieren',
     'metadataRefreshing': 'Metadaten werden aktualisiert… ({done}/{total})',
@@ -818,6 +892,19 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'libraryEmptyTitle': 'Your library is empty',
     'libraryEmptyMessage':
         'Movies, series and books you track will show up here.',
+    // library search / filter / sort (phase 5b)
+    'librarySearchHint': 'Search by title',
+    'filterLabel': 'Filter',
+    'sortBy': 'Sort',
+    'sortRecentlyAdded': 'Recently added',
+    'sortTitle': 'Title A–Z',
+    'sortReleaseYear': 'Release year',
+    'sortProgress': 'Progress',
+    'libraryNoMatchesTitle': 'No matches',
+    'libraryNoMatchesMessage': 'No items match your search or filters.',
+    'resetFilters': 'Reset filters',
+    'libraryResultCountOne': '{shown} result of {total}',
+    'libraryResultCountMany': '{shown} results of {total}',
     // metadata refresh
     'metadataRefreshAction': 'Refresh metadata',
     'metadataRefreshing': 'Updating metadata… ({done}/{total})',

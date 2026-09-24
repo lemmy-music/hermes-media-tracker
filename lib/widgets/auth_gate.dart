@@ -84,10 +84,10 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   void initState() {
     super.initState();
-    // `LibraryScreen` is stateless and the provider starts in the loading
-    // state, so the initial load has to be kicked off here — exactly once,
-    // when the shell mounts (i.e. right after sign-in). Deferred to after the
-    // first frame so it never notifies during build.
+    // `LibraryScreen` starts on a provider whose list is still loading, so the
+    // initial load has to be kicked off here — exactly once, when the shell
+    // mounts (i.e. right after sign-in). Deferred to after the first frame so
+    // it never notifies during build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<LibraryProvider>().load();

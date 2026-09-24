@@ -3,6 +3,7 @@ import 'package:media_tracker/l10n/app_language.dart';
 import 'package:media_tracker/l10n/app_strings.dart';
 import 'package:media_tracker/models/media_item.dart';
 import 'package:media_tracker/models/tmdb_result.dart';
+import 'package:media_tracker/services/library_filter.dart';
 import 'package:media_tracker/services/stats_calculator.dart';
 import 'package:media_tracker/services/tmdb_client.dart';
 
@@ -265,6 +266,62 @@ void main() {
       expect(en.watchTime(42 * 60 + 15), '42 h 15 min');
       expect(de.pagesCount(1234), '1.234 Seiten');
       expect(en.pagesCount(1234), '1,234 pages');
+    });
+  });
+
+  group('library search / filter / sort strings (phase 5b)', () {
+    const de = AppStrings(AppLanguage.de);
+    const en = AppStrings(AppLanguage.en);
+
+    test('every new string exists in both languages', () {
+      final pairs = <(String, String)>[
+        (de.librarySearchHint, en.librarySearchHint),
+        (de.filterLabel, en.filterLabel),
+        (de.sortBy, en.sortBy),
+        (de.sortRecentlyAdded, en.sortRecentlyAdded),
+        (de.sortTitle, en.sortTitle),
+        (de.sortReleaseYear, en.sortReleaseYear),
+        (de.sortProgress, en.sortProgress),
+        (de.libraryNoMatchesTitle, en.libraryNoMatchesTitle),
+        (de.libraryNoMatchesMessage, en.libraryNoMatchesMessage),
+        (de.resetFilters, en.resetFilters),
+        (de.libraryResultCount(12, 48), en.libraryResultCount(12, 48)),
+      ];
+      for (final (german, english) in pairs) {
+        expect(german.trim(), isNotEmpty);
+        expect(english.trim(), isNotEmpty);
+        expect(german, isNot(english));
+      }
+    });
+
+    test('sort labels are localized', () {
+      expect(de.sortLabel(LibrarySort.recentlyAdded), 'Kürzlich hinzugefügt');
+      expect(de.sortLabel(LibrarySort.titleAZ), 'Titel A–Z');
+      expect(en.sortLabel(LibrarySort.titleAZ), 'Title A–Z');
+      expect(de.sortLabel(LibrarySort.releaseYear), 'Erscheinungsjahr');
+      expect(en.sortLabel(LibrarySort.progress), 'Progress');
+    });
+
+    test('the result counter is singular-aware', () {
+      expect(de.libraryResultCount(1, 48), '1 Treffer von 48');
+      expect(de.libraryResultCount(12, 48), '12 Treffer von 48');
+      expect(en.libraryResultCount(1, 48), '1 result of 48');
+      expect(en.libraryResultCount(12, 48), '12 results of 48');
+    });
+
+    test('filter chip labels reuse the kind / status strings', () {
+      expect(de.libraryKindFilterLabel(LibraryKindFilter.all), 'Alle');
+      expect(en.libraryKindFilterLabel(LibraryKindFilter.all), 'All');
+      expect(de.libraryKindFilterLabel(LibraryKindFilter.books), 'Bücher');
+      expect(en.libraryKindFilterLabel(LibraryKindFilter.movies), 'Movies');
+      expect(
+        de.libraryStatusFilterLabel(LibraryStatusFilter.inProgress),
+        'Angefangen',
+      );
+      expect(
+        en.libraryStatusFilterLabel(LibraryStatusFilter.completed),
+        'Completed',
+      );
     });
   });
 }
