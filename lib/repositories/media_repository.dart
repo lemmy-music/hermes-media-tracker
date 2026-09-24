@@ -171,6 +171,69 @@ class MediaRepository {
   }
 
   // ───────────────────────────────────────────────────────────────────────────
+  // tracking state (Phase 3a)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// Writes **only tracking columns** of the item with [id] and returns the
+  /// stored row.
+  ///
+  /// [fields] must be a subset of [kTrackingUpdateFields]; anything else is
+  /// rejected before a request is made, so a tracking change can never clobber
+  /// the metadata snapshot (title, overview, poster, …) or the external ids.
+  /// `null` values are sent on purpose — e.g. clearing `started_at` when the
+  /// user resets an item to `planned`.
+  Future<MediaItem> updateTracking(String id, Map<String, dynamic> fields) {
+    final unknown = fields.keys
+        .where((key) => !kTrackingUpdateFields.contains(key))
+        .toList();
+    if (unknown.isNotEmpty) {
+      return Future<MediaItem>.error(
+        MediaRepositoryException(
+          'Refusing to write non-tracking column(s): ${unknown.join(', ')}.',
+        ),
+      );
+    }
+    _requireUserId();
+    return _guard(() async {
+      final row = await client
+          .from('media_items')
+          .update(Map<String, dynamic>.from(fields))
+          .eq('id', id)
+          .select()
+          .single();
+      return MediaItem.fromMap(row);
+    }, fallback: 'Could not save the change.');
+  }
+
+  /// Sets `status` (and nothing else).
+  Future<MediaItem> setStatus(String id, MediaStatus status) =>
+      updateTracking(id, <String, dynamic>{'status': status.wire});
+
+  /// Sets `progress_percent` (and only that column).
+  Future<MediaItem> setProgressPercent(String id, double percent) =>
+      updateTracking(id, <String, dynamic>{'progress_percent': percent});
+
+  /// Sets `progress_current` — or clears it with `null`.
+  Future<MediaItem> setProgressCurrent(String id, int? current) =>
+      updateTracking(id, <String, dynamic>{'progress_current': current});
+
+  /// Sets `started_at` — or clears it with `null`.
+  Future<MediaItem> setStartedAt(String id, DateTime? value) => updateTracking(
+    id,
+    <String, dynamic>{'started_at': value?.toUtc().toIso8601String()},
+  );
+
+  /// Sets `completed_at` — or clears it with `null`.
+  Future<MediaItem> setCompletedAt(String id, DateTime? value) =>
+      updateTracking(id, <String, dynamic>{
+        'completed_at': value?.toUtc().toIso8601String(),
+      });
+
+  /// Sets `total_pages` — or clears it with `null`.
+  Future<MediaItem> setTotalPages(String id, int? value) =>
+      updateTracking(id, <String, dynamic>{'total_pages': value});
+
+  // ───────────────────────────────────────────────────────────────────────────
   // episodes
   // ───────────────────────────────────────────────────────────────────────────
 
@@ -265,6 +328,21 @@ class MediaRepository {
     }
   }
 }
+
+/// The **only** columns a tracking write may touch.
+///
+/// Everything else on `media_items` — the metadata snapshot, ownership, `kind`,
+/// the external ids and `created_at`/`updated_at` — is out of bounds for a
+/// tracking change (see [MediaRepository.updateTracking]); `updated_at` is set
+/// by the database trigger.
+const Set<String> kTrackingUpdateFields = <String>{
+  'status',
+  'progress_percent',
+  'progress_current',
+  'started_at',
+  'completed_at',
+  'total_pages',
+};
 
 /// The **only** columns a metadata refresh may touch.
 ///

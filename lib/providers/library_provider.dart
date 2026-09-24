@@ -6,6 +6,7 @@ import '../models/tmdb_result.dart';
 import '../repositories/media_repository.dart';
 import '../services/tmdb_client.dart';
 import 'settings_provider.dart';
+import 'tracking_rules.dart';
 
 /// Outcome of one metadata refresh run.
 @immutable
@@ -62,6 +63,7 @@ class LibraryProvider extends ChangeNotifier {
     required TmdbClient tmdbClient,
     required SettingsProvider settings,
     int maxConcurrency = defaultMaxConcurrency,
+    DateTime Function()? clock,
   }) : // The two fields below are private and their parameter names must stay
        // public, so an initializing formal is impossible here — the lint is a
        // false positive.
@@ -71,6 +73,7 @@ class LibraryProvider extends ChangeNotifier {
        _tmdbClient = tmdbClient,
        _settings = settings,
        _language = settings.language,
+       _clock = clock ?? DateTime.now,
        _maxConcurrency = maxConcurrency < 1 ? 1 : maxConcurrency {
     _settings.addListener(_onSettingsChanged);
   }
@@ -86,6 +89,10 @@ class LibraryProvider extends ChangeNotifier {
   final TmdbClient _tmdbClient;
   final SettingsProvider _settings;
   final int _maxConcurrency;
+
+  /// Injectable clock — production uses [DateTime.now], tests pin it so the
+  /// auto-filled timestamps are deterministic.
+  final DateTime Function() _clock;
 
   /// The language the metadata currently reflects — the provider refreshes
   /// whenever [SettingsProvider] moves away from it.
@@ -134,6 +141,97 @@ class LibraryProvider extends ChangeNotifier {
       _loading = false;
     }
     _notify();
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // tracking (Phase 3a — movies & books)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// The loaded item with [id], or `null` when it is not (or no longer) in the
+  /// list. Backs the live detail view, which must not work on a stale copy.
+  MediaItem? itemById(String? id) {
+    if (id == null) return null;
+    for (final item in _items) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  /// Changes [item]'s status.
+  ///
+  /// The columns are computed by [statusChangeFields] — `in_progress` fills a
+  /// missing `started_at`, `completed` fills a missing `completed_at` and forces
+  /// 100 %, `planned` resets the progress and clears both timestamps. Manually
+  /// entered values are never overwritten.
+  Future<MediaItem> setStatus(MediaItem item, MediaStatus status) =>
+      _applyTracking(item, statusChangeFields(item, status, now: _clock()));
+
+  /// Sets the percent progress of a movie or a book.
+  ///
+  /// Reaching 100 % also completes the item (unless it was dropped).
+  Future<MediaItem> setProgressPercent(MediaItem item, num percent) =>
+      _applyTracking(item, progressPercentFields(item, percent, now: _clock()));
+
+  /// Sets the current page of a book with a known page count.
+  ///
+  /// The percent value is derived and stored alongside it; the last page
+  /// completes the item (unless it was dropped).
+  Future<MediaItem> setProgressPage(MediaItem item, int page) =>
+      _applyTracking(item, progressPageFields(item, page, now: _clock()));
+
+  /// Sets (or clears) the "started on" timestamp manually — Daniel wants to be
+  /// able to back-date an entry.
+  Future<MediaItem> setStartedAt(MediaItem item, DateTime? value) =>
+      _applyTracking(item, startedAtFields(value));
+
+  /// Sets (or clears) the "completed on" timestamp manually.
+  Future<MediaItem> setCompletedAt(MediaItem item, DateTime? value) =>
+      _applyTracking(item, completedAtFields(value));
+
+  /// Sets (or clears) a book's total page count.
+  Future<MediaItem> setTotalPages(MediaItem item, int? value) =>
+      _applyTracking(item, totalPagesFields(item, value));
+
+  /// Removes [item] from the library.
+  Future<void> deleteItem(MediaItem item) async {
+    final id = _requireId(item);
+    await _repository.delete(id);
+    _items = _items.where((candidate) => candidate.id != id).toList();
+    _notify();
+  }
+
+  /// Writes [fields], swaps the stored row into the list and notifies — so the
+  /// library list and the detail view both reflect the change immediately.
+  Future<MediaItem> _applyTracking(
+    MediaItem item,
+    Map<String, dynamic> fields,
+  ) async {
+    final updated = await _repository.updateTracking(_requireId(item), fields);
+    _replace(updated);
+    return updated;
+  }
+
+  /// Replaces the stored copy of [item] (matched by id), keeping the list order.
+  void _replace(MediaItem item) {
+    final id = item.id;
+    if (id == null) return;
+    final index = _items.indexWhere((candidate) => candidate.id == id);
+    if (index == -1) {
+      // Not in the list (e.g. loaded elsewhere) — append so it stays visible.
+      _items = <MediaItem>[..._items, item];
+    } else {
+      final next = List<MediaItem>.of(_items)..[index] = item;
+      _items = next;
+    }
+    _notify();
+  }
+
+  String _requireId(MediaItem item) {
+    final id = item.id;
+    if (id == null) {
+      throw const MediaRepositoryException('This item has not been saved yet.');
+    }
+    return id;
   }
 
   // ───────────────────────────────────────────────────────────────────────────

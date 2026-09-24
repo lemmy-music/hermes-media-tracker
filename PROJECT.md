@@ -39,7 +39,7 @@ Track three media types with different granularity:
 - [x] **Phase 1a — Data layer:** Supabase project + schema (media items, status/progress, episodes), magic-link auth, models + repository, client wiring, library list (loading / empty / error / list).
 - [ ] **Phase 1b — Data layer:** JSON export/import of local state.
 - [~] **Phase 2 — Metadata:** TMDB client (search + details + seasons/episodes) ✓, **OpenLibrary book client** (search + details + ISBN lookup) ✓, search & detail UI (movies/series/books) ✓, DE/EN language toggle ✓; season/episode browser follows in Phase 3b.
-- [ ] **Phase 3a — Tracking UI (movies & books):** status (planned / in progress / completed / dropped), progress percent for movies, page-based progress for books, started/completed timestamps.
+- [x] **Phase 3a — Tracking UI (movies & books):** status (planned / in progress / completed / dropped), progress percent for movies, page-based progress for books (percent fallback), editable started/completed timestamps, delete with confirmation. Series entries show a "phase 3b" notice instead of tracking controls.
 - [ ] **Phase 3b — Series tracking (episodes):** season/episode browsing, per-episode check-off, bulk "mark season". The series status and progress are **derived** from the checked episodes (e.g. 10/19 → 53 % and "in progress"; all → "completed").
 - [ ] **Phase 5 — Polish:** filters/sorting, stats, empty states, offline behaviour.
 - [ ] **Phase 6 — Bonus:** ISBN scanner (`mobile_scanner`).

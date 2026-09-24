@@ -213,6 +213,70 @@ class AppStrings {
       _tParam(count == 1 ? 'pageOne' : 'pageMany', {'count': '$count'});
 
   // ───────────────────────────────────────────────────────────────────────────
+  // tracking / detail view (Phase 3a)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// Section header of the tracking controls.
+  String get trackingSection => _t('trackingSection');
+
+  /// Label above the movie / book progress controls.
+  String get progress => _t('progress');
+
+  /// Label of the book "current page" input.
+  String get currentPage => _t('currentPage');
+
+  /// Label / field for a book's total page count.
+  String get totalPages => _t('totalPages');
+
+  /// "Started on" timestamp row.
+  String get startedAt => _t('startedAt');
+
+  /// "Completed on" timestamp row.
+  String get completedAt => _t('completedAt');
+
+  /// Placeholder for a timestamp that has not been set (yet).
+  String get notSet => _t('notSet');
+
+  /// Tooltip of the date-picker buttons.
+  String get pickDate => _t('pickDate');
+
+  /// Tooltip of the "clear timestamp" buttons.
+  String get clearDate => _t('clearDate');
+
+  /// "Delete item" action / confirmation dialog copy.
+  String get deleteItem => _t('deleteItem');
+  String get deleteConfirmTitle => _t('deleteConfirmTitle');
+
+  /// Confirmation body — injects the item title.
+  String deleteConfirmMessage(String title) =>
+      _tParam('deleteConfirmMessage', {'title': title});
+  String get delete => _t('delete');
+  String get cancel => _t('cancel');
+  String get itemDeleted => _t('itemDeleted');
+  String get trackingSaveError => _t('trackingSaveError');
+  String get invalidPage => _t('invalidPage');
+  String get savePage => _t('savePage');
+
+  /// Fallback shown for an item without a description.
+  String get noDescription => _t('noDescription');
+
+  /// Notice shown for series entries until episode tracking lands (Phase 3b).
+  String get seriesTrackingTitle => _t('seriesTrackingTitle');
+  String get seriesTrackingMessage => _t('seriesTrackingMessage');
+
+  /// "Page X of Y" (book progress), e.g. "Seite 42 von 300".
+  String pageOf(int current, int total) =>
+      _tParam('pageOf', {'current': '$current', 'total': '$total'});
+
+  /// "Page X" when the total page count is unknown.
+  String pageOfUnknownTotal(int current) =>
+      _tParam('pageOfUnknownTotal', {'current': '$current'});
+
+  /// "42 %" / "42%" — the percent display on the sliders and in the list.
+  String percentValue(int value) =>
+      _tParam('percentValue', {'value': '$value'});
+
+  // ───────────────────────────────────────────────────────────────────────────
   // TMDB service messages (thrown as [TmdbException] and shown in the UI)
   // ───────────────────────────────────────────────────────────────────────────
 
@@ -351,6 +415,33 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'episodeMany': '{count} Folgen',
     'pageOne': '{count} Seite',
     'pageMany': '{count} Seiten',
+    // tracking / detail (phase 3a)
+    'trackingSection': 'Verfolgung',
+    'progress': 'Fortschritt',
+    'currentPage': 'Aktuelle Seite',
+    'totalPages': 'Seiten gesamt',
+    'startedAt': 'Begonnen am',
+    'completedAt': 'Abgeschlossen am',
+    'notSet': 'Noch nicht gesetzt',
+    'pickDate': 'Datum wählen',
+    'clearDate': 'Datum löschen',
+    'deleteItem': 'Eintrag löschen',
+    'deleteConfirmTitle': 'Eintrag löschen?',
+    'deleteConfirmMessage': '„{title}“ wird aus deiner Bibliothek entfernt.',
+    'delete': 'Löschen',
+    'cancel': 'Abbrechen',
+    'itemDeleted': 'Eintrag gelöscht',
+    'trackingSaveError': 'Änderung konnte nicht gespeichert werden.',
+    'invalidPage': 'Bitte gib eine gültige Seitenzahl ein.',
+    'savePage': 'Seite speichern',
+    'noDescription': 'Keine Beschreibung verfügbar.',
+    'seriesTrackingTitle': 'Folgen-Verfolgung folgt',
+    'seriesTrackingMessage':
+        'Das Verfolgen einzelner Folgen und Staffeln kommt im nächsten '
+        'Schritt (Phase 3b). Bis dahin bleibt dieser Eintrag ohne Fortschritt.',
+    'pageOf': 'Seite {current} von {total}',
+    'pageOfUnknownTotal': 'Seite {current}',
+    'percentValue': '{value} %',
     // TMDB service
     'tmdbNotConfigured':
         'TMDB ist für diesen Build nicht konfiguriert. Baue neu mit '
@@ -478,6 +569,33 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'episodeMany': '{count} episodes',
     'pageOne': '{count} page',
     'pageMany': '{count} pages',
+    // tracking / detail (phase 3a)
+    'trackingSection': 'Tracking',
+    'progress': 'Progress',
+    'currentPage': 'Current page',
+    'totalPages': 'Total pages',
+    'startedAt': 'Started on',
+    'completedAt': 'Completed on',
+    'notSet': 'Not set yet',
+    'pickDate': 'Pick a date',
+    'clearDate': 'Clear date',
+    'deleteItem': 'Delete item',
+    'deleteConfirmTitle': 'Delete this item?',
+    'deleteConfirmMessage': '“{title}” will be removed from your library.',
+    'delete': 'Delete',
+    'cancel': 'Cancel',
+    'itemDeleted': 'Item deleted',
+    'trackingSaveError': 'Could not save the change.',
+    'invalidPage': 'Please enter a valid page number.',
+    'savePage': 'Save page',
+    'noDescription': 'No description available.',
+    'seriesTrackingTitle': 'Episode tracking coming soon',
+    'seriesTrackingMessage':
+        'Tracking individual episodes and seasons arrives in the next step '
+        '(Phase 3b). Until then this entry stays without progress.',
+    'pageOf': 'Page {current} of {total}',
+    'pageOfUnknownTotal': 'Page {current}',
+    'percentValue': '{value}%',
     // TMDB service
     'tmdbNotConfigured':
         'TMDB is not configured for this build. Rebuild with '

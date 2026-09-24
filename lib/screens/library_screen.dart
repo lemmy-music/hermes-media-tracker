@@ -7,12 +7,14 @@ import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/media_widgets.dart';
 import '../widgets/settings_button.dart';
+import 'media_detail_screen.dart';
 
 /// Library tab — lists everything the signed-in user tracks.
 ///
-/// Detail and tracking UI arrive in Phase 3; this is a read-only list with
-/// loading / empty / error states, manual refresh and the metadata refresh
-/// entry point (the automatic one runs while the language changes).
+/// Read-only list with loading / empty / error states, manual refresh and the
+/// metadata refresh entry point (the automatic one runs while the language
+/// changes). Tracking state is shown per row and edited on the detail screen,
+/// which opens on a tap.
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
 
@@ -197,68 +199,103 @@ class _MetadataRefreshBanner extends StatelessWidget {
   }
 }
 
-/// A single library row: cover thumbnail, title, year, kind badge and status.
+/// A single library row: cover thumbnail, title, kind + status badges and — for
+/// movies and books — a progress bar. Tapping it opens the detail screen.
+///
+/// Series rows deliberately show no progress: episode tracking arrives in
+/// Phase 3b.
 class _MediaTile extends StatelessWidget {
   const _MediaTile({required this.item, required this.posterWidth});
 
   final MediaItem item;
   final double posterWidth;
 
+  /// Whether a progress bar is meaningful for this kind (movies & books).
+  bool get _showsProgress => item.kind != MediaKind.series;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final strings = context.strings;
     final year = item.releaseYear;
     final posterHeight = posterWidth * 3 / 2;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          PosterThumbnail(
-            url: item.posterUrl,
-            placeholderIcon: mediaKindIcon(item.kind),
-            width: posterWidth,
-            height: posterHeight,
-            iconSize: posterWidth * 0.35,
-            borderRadius: 10,
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium,
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    PillBadge(
-                      icon: mediaKindIcon(item.kind),
-                      label: strings.kindLabel(item.kind),
-                    ),
-                    if (year != null)
-                      Text('$year', style: theme.textTheme.bodySmall),
-                    Text(
-                      strings.statusLabel(item.status),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+    return InkWell(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => MediaDetailScreen(item: item)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            PosterThumbnail(
+              url: item.posterUrl,
+              placeholderIcon: mediaKindIcon(item.kind),
+              width: posterWidth,
+              height: posterHeight,
+              iconSize: posterWidth * 0.35,
+              borderRadius: 10,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      PillBadge(
+                        icon: mediaKindIcon(item.kind),
+                        label: strings.kindLabel(item.kind),
                       ),
+                      StatusBadge(
+                        status: item.status,
+                        label: strings.statusLabel(item.status),
+                      ),
+                      if (year != null)
+                        Text('$year', style: theme.textTheme.bodySmall),
+                    ],
+                  ),
+                  if (_showsProgress) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: LinearProgressIndicator(
+                            value:
+                                (item.progressPercent ?? 0).clamp(0, 100) / 100,
+                            minHeight: 5,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          strings.percentValue(
+                            (item.progressPercent ?? 0).round(),
+                          ),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

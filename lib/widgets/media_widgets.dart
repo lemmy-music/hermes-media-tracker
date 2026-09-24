@@ -54,6 +54,62 @@ class PillBadge extends StatelessWidget {
   }
 }
 
+/// A pill that colour-codes a media item's tracking status.
+///
+/// The label is passed in already localized (see `AppStrings.statusLabel`).
+class StatusBadge extends StatelessWidget {
+  const StatusBadge({super.key, required this.status, required this.label});
+
+  final MediaStatus status;
+
+  /// Localized status text.
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    // A subtle, theme-aware palette per status — planned is neutral, progress
+    // is the accent, completed is positive and dropped reads as a warning.
+    final (Color background, Color foreground) = switch (status) {
+      MediaStatus.planned => (cs.surfaceContainerHighest, cs.onSurfaceVariant),
+      MediaStatus.inProgress => (cs.primaryContainer, cs.onPrimaryContainer),
+      MediaStatus.completed => (cs.tertiaryContainer, cs.onTertiaryContainer),
+      MediaStatus.dropped => (cs.errorContainer, cs.onErrorContainer),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(_icon, size: 12, color: foreground),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: foreground,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData get _icon => switch (status) {
+    MediaStatus.planned => Icons.bookmark_border,
+    MediaStatus.inProgress => Icons.play_arrow,
+    MediaStatus.completed => Icons.check,
+    MediaStatus.dropped => Icons.close,
+  };
+}
+
 /// A network poster with a kind-specific placeholder.
 ///
 /// Never throws on a missing / broken image: [url] `null` or an image error

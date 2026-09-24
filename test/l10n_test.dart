@@ -114,4 +114,73 @@ void main() {
     expect(AppStrings.forTmdb('en-US').language, AppLanguage.en);
     expect(AppStrings.forTmdb('de-DE').tmdbTimeout, contains('TMDB'));
   });
+
+  group('tracking strings (phase 3a)', () {
+    test('German covers the whole tracking UI', () {
+      const de = AppStrings(AppLanguage.de);
+      expect(de.trackingSection, 'Verfolgung');
+      expect(de.progress, 'Fortschritt');
+      expect(de.currentPage, 'Aktuelle Seite');
+      expect(de.totalPages, 'Seiten gesamt');
+      expect(de.startedAt, 'Begonnen am');
+      expect(de.completedAt, 'Abgeschlossen am');
+      expect(de.notSet, 'Noch nicht gesetzt');
+      expect(de.deleteItem, 'Eintrag löschen');
+      expect(de.seriesTrackingTitle, 'Folgen-Verfolgung folgt');
+      expect(de.pageOf(42, 300), 'Seite 42 von 300');
+      expect(de.pageOfUnknownTotal(7), 'Seite 7');
+      expect(de.percentValue(42), '42 %');
+      expect(de.deleteConfirmMessage('Dune'), contains('Dune'));
+    });
+
+    test('English covers the whole tracking UI', () {
+      const en = AppStrings(AppLanguage.en);
+      expect(en.trackingSection, 'Tracking');
+      expect(en.progress, 'Progress');
+      expect(en.currentPage, 'Current page');
+      expect(en.totalPages, 'Total pages');
+      expect(en.startedAt, 'Started on');
+      expect(en.completedAt, 'Completed on');
+      expect(en.notSet, 'Not set yet');
+      expect(en.deleteItem, 'Delete item');
+      expect(en.seriesTrackingTitle, 'Episode tracking coming soon');
+      expect(en.pageOf(42, 300), 'Page 42 of 300');
+      expect(en.percentValue(42), '42%');
+      expect(en.deleteConfirmMessage('Dune'), contains('Dune'));
+    });
+
+    test('every new string is present in both languages', () {
+      const de = AppStrings(AppLanguage.de);
+      const en = AppStrings(AppLanguage.en);
+      // A missing key would fall back to the raw key — catch that with a list
+      // of the strings whose value must differ between the two languages.
+      final pairs = <(String, String)>[
+        (de.trackingSection, en.trackingSection),
+        (de.progress, en.progress),
+        (de.currentPage, en.currentPage),
+        (de.totalPages, en.totalPages),
+        (de.startedAt, en.startedAt),
+        (de.completedAt, en.completedAt),
+        (de.notSet, en.notSet),
+        (de.pickDate, en.pickDate),
+        (de.clearDate, en.clearDate),
+        (de.deleteItem, en.deleteItem),
+        (de.deleteConfirmTitle, en.deleteConfirmTitle),
+        (de.delete, en.delete),
+        (de.cancel, en.cancel),
+        (de.itemDeleted, en.itemDeleted),
+        (de.trackingSaveError, en.trackingSaveError),
+        (de.invalidPage, en.invalidPage),
+        (de.savePage, en.savePage),
+        (de.noDescription, en.noDescription),
+        (de.seriesTrackingTitle, en.seriesTrackingTitle),
+        (de.seriesTrackingMessage, en.seriesTrackingMessage),
+      ];
+      for (final (german, english) in pairs) {
+        expect(german.trim(), isNotEmpty);
+        expect(english.trim(), isNotEmpty);
+        expect(german, isNot(english));
+      }
+    });
+  });
 }
