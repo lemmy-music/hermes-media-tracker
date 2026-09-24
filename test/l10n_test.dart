@@ -126,7 +126,13 @@ void main() {
       expect(de.completedAt, 'Abgeschlossen am');
       expect(de.notSet, 'Noch nicht gesetzt');
       expect(de.deleteItem, 'Eintrag löschen');
-      expect(de.seriesTrackingTitle, 'Folgen-Verfolgung folgt');
+      expect(de.seasonLabel, 'Staffel');
+      expect(de.episodesLabel, 'Folgen');
+      expect(de.episodeNumber(3), 'Folge 3');
+      expect(de.markSeasonWatched, 'Staffel als gesehen markieren');
+      expect(de.resetSeason, 'Staffel zurücksetzen');
+      expect(de.noEpisodes, 'Keine Folgen gefunden');
+      expect(de.airedOn, 'Ausgestrahlt am');
       expect(de.pageOf(42, 300), 'Seite 42 von 300');
       expect(de.pageOfUnknownTotal(7), 'Seite 7');
       expect(de.percentValue(42), '42 %');
@@ -143,7 +149,13 @@ void main() {
       expect(en.completedAt, 'Completed on');
       expect(en.notSet, 'Not set yet');
       expect(en.deleteItem, 'Delete item');
-      expect(en.seriesTrackingTitle, 'Episode tracking coming soon');
+      expect(en.seasonLabel, 'Season');
+      expect(en.episodesLabel, 'Episodes');
+      expect(en.episodeNumber(3), 'Episode 3');
+      expect(en.markSeasonWatched, 'Mark season as watched');
+      expect(en.resetSeason, 'Reset season');
+      expect(en.noEpisodes, 'No episodes found');
+      expect(en.airedOn, 'Aired on');
       expect(en.pageOf(42, 300), 'Page 42 of 300');
       expect(en.percentValue(42), '42%');
       expect(en.deleteConfirmMessage('Dune'), contains('Dune'));
@@ -173,8 +185,16 @@ void main() {
         (de.invalidPage, en.invalidPage),
         (de.savePage, en.savePage),
         (de.noDescription, en.noDescription),
-        (de.seriesTrackingTitle, en.seriesTrackingTitle),
-        (de.seriesTrackingMessage, en.seriesTrackingMessage),
+        (de.seasonLabel, en.seasonLabel),
+        (de.episodesLabel, en.episodesLabel),
+        (de.watchedLabel, en.watchedLabel),
+        (de.markSeasonWatched, en.markSeasonWatched),
+        (de.resetSeason, en.resetSeason),
+        (de.noEpisodes, en.noEpisodes),
+        (de.airedOn, en.airedOn),
+        (de.runtimeLabel, en.runtimeLabel),
+        (de.resetSeasonConfirmTitle, en.resetSeasonConfirmTitle),
+        (de.episodesLoadErrorTitle, en.episodesLoadErrorTitle),
       ];
       for (final (german, english) in pairs) {
         expect(german.trim(), isNotEmpty);

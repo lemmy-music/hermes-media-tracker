@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/episode.dart';
+import '../models/json_utils.dart';
 import '../models/media_item.dart';
 
 /// A Supabase failure translated into a message that is safe to show the user.
@@ -253,6 +254,10 @@ class MediaRepository {
   /// Inserts or updates [episodes] (matched on
   /// `media_item_id, season_number, episode_number`) and returns the stored
   /// rows.
+  ///
+  /// The **watch state is sent along** — this is the write used when episodes
+  /// are first loaded and no row exists yet. For a metadata-only refresh use
+  /// [upsertEpisodeMetadata] instead.
   Future<List<Episode>> upsertEpisodes(List<Episode> episodes) {
     if (episodes.isEmpty) return Future<List<Episode>>.value(const <Episode>[]);
     final userId = _requireUserId();
@@ -262,6 +267,33 @@ class MediaRepository {
             (episode) => Map<String, dynamic>.from(episode.toMap())
               ..['user_id'] = userId
               ..remove('created_at'),
+          )
+          .toList();
+      final rows = await client
+          .from('episodes')
+          .upsert(
+            payloads,
+            onConflict: 'media_item_id,season_number,episode_number',
+          )
+          .select();
+      return rows.map(Episode.fromMap).toList();
+    }, fallback: 'Could not save the episodes.');
+  }
+
+  /// Upserts **only the metadata columns** of [episodes] (matched on
+  /// `media_item_id, season_number, episode_number`).
+  ///
+  /// Used by the language-driven refresh: `watched` stays exactly as the user
+  /// left it (the column is simply not part of the payload, so PostgREST
+  /// leaves it untouched on an existing row and the `false` default applies to
+  /// a row inserted for the first time).
+  Future<List<Episode>> upsertEpisodeMetadata(List<Episode> episodes) {
+    if (episodes.isEmpty) return Future<List<Episode>>.value(const <Episode>[]);
+    final userId = _requireUserId();
+    return _guard(() async {
+      final payloads = episodes
+          .map(
+            (episode) => episodeMetadataPayload(episode)..['user_id'] = userId,
           )
           .toList();
       final rows = await client
@@ -294,6 +326,40 @@ class MediaRepository {
           .single();
       return Episode.fromMap(row);
     }, fallback: 'Could not update the episode.');
+  }
+
+  /// Marks **every episode of a season** of [mediaItemId] as watched and
+  /// returns the updated rows.
+  Future<List<Episode>> markSeasonWatched(
+    String mediaItemId,
+    int seasonNumber,
+  ) => _updateSeasonWatchState(mediaItemId, seasonNumber, watched: true);
+
+  /// Clears the watched state of **every episode of a season** and returns the
+  /// updated rows.
+  Future<List<Episode>> resetSeason(String mediaItemId, int seasonNumber) =>
+      _updateSeasonWatchState(mediaItemId, seasonNumber, watched: false);
+
+  Future<List<Episode>> _updateSeasonWatchState(
+    String mediaItemId,
+    int seasonNumber, {
+    required bool watched,
+  }) {
+    _requireUserId();
+    return _guard(() async {
+      final rows = await client
+          .from('episodes')
+          .update(<String, dynamic>{
+            'watched': watched,
+            'watched_at': watched
+                ? DateTime.now().toUtc().toIso8601String()
+                : null,
+          })
+          .eq('media_item_id', mediaItemId)
+          .eq('season_number', seasonNumber)
+          .select();
+      return rows.map(Episode.fromMap).toList();
+    }, fallback: 'Could not update the season.');
   }
 
   /// Deletes a single episode.
@@ -372,6 +438,39 @@ Map<String, dynamic> metadataUpdatePayload(MediaItem item) {
     'poster_url': item.posterUrl,
     'total_seasons': item.totalSeasons,
     'total_episodes': item.totalEpisodes,
+  };
+}
+
+/// The **only** columns an episode metadata refresh may touch.
+///
+/// The watch state (`watched`, `watched_at`) and the identity columns
+/// (`id`, `user_id`, `created_at`) are out of bounds — see
+/// [MediaRepository.upsertEpisodeMetadata].
+const Set<String> kEpisodeMetadataFields = <String>{
+  'media_item_id',
+  'season_number',
+  'episode_number',
+  'name',
+  'overview',
+  'air_date',
+  'still_url',
+  'runtime',
+};
+
+/// Builds the PostgREST payload for
+/// [MediaRepository.upsertEpisodeMetadata] — exactly [kEpisodeMetadataFields],
+/// never the watch state. Nullable columns are sent as `null` so a language
+/// without a localized title/overview/still can clear a stale one.
+Map<String, dynamic> episodeMetadataPayload(Episode episode) {
+  return <String, dynamic>{
+    'media_item_id': episode.mediaItemId,
+    'season_number': episode.seasonNumber,
+    'episode_number': episode.episodeNumber,
+    'name': episode.name,
+    'overview': episode.overview,
+    'air_date': episode.airDate == null ? null : dateOnly(episode.airDate!),
+    'still_url': episode.stillUrl,
+    'runtime': episode.runtime,
   };
 }
 

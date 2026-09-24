@@ -211,6 +211,7 @@ class TmdbTvDetails extends TmdbDetails {
     this.numberOfSeasons,
     this.numberOfEpisodes,
     this.episodeRunTime = const <int>[],
+    this.seasons = const <TmdbSeasonSummary>[],
     this.posterPath,
     this.overview,
   });
@@ -224,6 +225,7 @@ class TmdbTvDetails extends TmdbDetails {
       numberOfSeasons: jsonInt(json['number_of_seasons']),
       numberOfEpisodes: jsonInt(json['number_of_episodes']),
       episodeRunTime: _intList(json['episode_run_time']),
+      seasons: _seasonSummaries(json['seasons']),
       posterPath: jsonString(json['poster_path']),
       overview: jsonString(json['overview']),
     );
@@ -240,6 +242,11 @@ class TmdbTvDetails extends TmdbDetails {
 
   /// Typical episode runtime(s) in minutes — often empty for new shows.
   final List<int> episodeRunTime;
+
+  /// The season list as returned by `tv/{id}` — used by Phase 3b to know which
+  /// seasons to fetch. **Includes** the specials (`season_number == 0`); the
+  /// caller decides whether to skip them.
+  final List<TmdbSeasonSummary> seasons;
   @override
   final String? posterPath;
   @override
@@ -267,6 +274,44 @@ class TmdbTvDetails extends TmdbDetails {
     totalSeasons: numberOfSeasons,
     totalEpisodes: numberOfEpisodes,
   );
+}
+
+/// One entry of a `tv/{id}` `seasons` array.
+class TmdbSeasonSummary {
+  const TmdbSeasonSummary({
+    required this.seasonNumber,
+    this.name,
+    this.episodeCount,
+    this.posterPath,
+  });
+
+  factory TmdbSeasonSummary.fromJson(Map<String, dynamic> json) {
+    return TmdbSeasonSummary(
+      seasonNumber: jsonInt(json['season_number']) ?? 0,
+      name: jsonString(json['name']),
+      episodeCount: jsonInt(json['episode_count']),
+      posterPath: jsonString(json['poster_path']),
+    );
+  }
+
+  /// `0` is the specials season.
+  final int seasonNumber;
+  final String? name;
+
+  /// Number of episodes TMDB reports for the season (may be `null`).
+  final int? episodeCount;
+  final String? posterPath;
+
+  /// Whether this is the specials season (`season 0`).
+  bool get isSpecials => seasonNumber == 0;
+}
+
+List<TmdbSeasonSummary> _seasonSummaries(Object? value) {
+  if (value is! List) return const <TmdbSeasonSummary>[];
+  return value
+      .whereType<Map>()
+      .map((e) => TmdbSeasonSummary.fromJson(Map<String, dynamic>.from(e)))
+      .toList();
 }
 
 /// A single episode inside [TmdbSeasonDetails].

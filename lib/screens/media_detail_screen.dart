@@ -2,21 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/episode.dart';
 import '../models/media_item.dart';
 import '../providers/library_provider.dart';
+import '../providers/series_rules.dart';
 import '../repositories/media_repository.dart';
 import '../widgets/media_widgets.dart';
 
 /// Full-page detail **and** tracking view for a library entry.
 ///
-/// Phase 3a covers **movies and books**: a percent slider for movies,
-/// page-based progress (with a percent fallback) for books, the four statuses
-/// and manually editable start / finish timestamps.
+/// Movies and books (Phase 3a) get a percent slider / page input, the four
+/// statuses and manually editable start / finish timestamps.
 ///
-/// Series entries are shown too, but deliberately without tracking controls —
-/// episode tracking lands in Phase 3b, so a notice is displayed instead. The
-/// screen never crashes on missing metadata (no cover, description, page count
-/// or timestamp).
+/// Series (Phase 3b) are tracked **per episode**: the status and the progress
+/// are *derived* from the checked-off episodes (see `series_rules.dart` and
+/// [LibraryProvider]), so the manual status selector is replaced by a
+/// season selector plus an episode list with watched checkboxes. Episode
+/// metadata is loaded lazily from TMDB on the first open.
+///
+/// The screen never crashes on missing metadata (no cover, description, page
+/// count, air date, runtime, still or episode list).
 ///
 /// Every change is persisted immediately (no save button); failures surface as
 /// a snack bar.
@@ -39,6 +44,17 @@ class MediaDetailScreen extends StatelessWidget {
   );
   static const Key editStartedAtKey = Key('media-detail-edit-started');
   static const Key editCompletedAtKey = Key('media-detail-edit-completed');
+
+  // Series (phase 3b) keys.
+  static const Key seasonSelectorKey = Key('series-season-selector');
+  static const Key markSeasonWatchedKey = Key('series-mark-season');
+  static const Key resetSeasonKey = Key('series-reset-season');
+  static const Key retryEpisodesKey = Key('series-retry-episodes');
+  static const Key refreshEpisodesKey = Key('series-refresh-episodes');
+
+  /// Key of the watched checkbox of `S{season}E{episode}`.
+  static Key episodeCheckboxKey(int season, int episode) =>
+      Key('series-episode-$season-$episode');
 
   @override
   Widget build(BuildContext context) {
@@ -64,7 +80,7 @@ class MediaDetailScreen extends StatelessWidget {
           _Header(item: live),
           const Divider(height: 1),
           if (live.kind == MediaKind.series)
-            const _SeriesNotice()
+            _SeriesTrackingSection(item: live)
           else
             _TrackingSection(item: live),
         ],
@@ -200,49 +216,400 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// Shown instead of the tracking controls for series (Phase 3b).
-class _SeriesNotice extends StatelessWidget {
-  const _SeriesNotice();
+/// Season / episode tracking for a series (Phase 3b).
+///
+/// Loads the episode metadata lazily on first open, lets the user pick a
+/// season and check off episodes; the series status and progress are derived
+/// and persisted by [LibraryProvider].
+class _SeriesTrackingSection extends StatefulWidget {
+  const _SeriesTrackingSection({required this.item});
+
+  final MediaItem item;
+
+  @override
+  State<_SeriesTrackingSection> createState() => _SeriesTrackingSectionState();
+}
+
+class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
+  /// The season currently shown. `null` until episodes are loaded — then the
+  /// lowest season number wins.
+  int? _seasonNumber;
+
+  /// `true` while a mutation is in flight (disables the bulk actions).
+  bool _busy = false;
+
+  MediaItem get item => widget.item;
+
+  @override
+  void initState() {
+    super.initState();
+    _ensureEpisodes();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SeriesTrackingSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.id != item.id) {
+      _seasonNumber = null;
+      _ensureEpisodes();
+    }
+  }
+
+  /// Kicks off the lazy load in the next frame (never during build).
+  void _ensureEpisodes() {
+    final library = context.read<LibraryProvider>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      library.ensureEpisodes(item);
+    });
+  }
+
+  Future<void> _run(Future<void> Function() action) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final strings = AppStrings.read(context);
+    setState(() => _busy = true);
+    try {
+      await action();
+    } on MediaRepositoryException catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(error.message)));
+    } catch (_) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(strings.trackingSaveError)),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _toggleEpisode(Episode episode, bool watched) => _run(
+    () => context.read<LibraryProvider>().setEpisodeWatched(
+      item,
+      episode,
+      watched,
+    ),
+  );
+
+  Future<void> _markSeason(int seasonNumber) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final strings = AppStrings.read(context);
+    await _run(
+      () =>
+          context.read<LibraryProvider>().markSeasonWatched(item, seasonNumber),
+    );
+    messenger.showSnackBar(SnackBar(content: Text(strings.seasonWatchedDone)));
+  }
+
+  Future<void> _resetSeason(int seasonNumber) async {
+    final strings = AppStrings.read(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.resetSeasonConfirmTitle),
+        content: Text(strings.resetSeasonConfirmMessage(seasonNumber)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(strings.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.resetSeason),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await _run(
+      () => context.read<LibraryProvider>().resetSeason(item, seasonNumber),
+    );
+    messenger.showSnackBar(SnackBar(content: Text(strings.seasonResetDone)));
+  }
+
+  Future<void> _refresh() =>
+      _run(() => context.read<LibraryProvider>().refreshEpisodes(item));
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     final strings = context.strings;
+    final library = context.watch<LibraryProvider>();
+
+    final loading = library.episodesLoading(item.id);
+    final error = library.episodesError(item.id);
+    final seasons = library.seasonsFor(item.id);
+    final allEpisodes = library.episodesFor(item.id);
+
+    // Pick (and keep) a valid season.
+    var season = _seasonNumber;
+    if (seasons.isNotEmpty && (season == null || !seasons.contains(season))) {
+      season = seasons.first;
+    }
 
     return Padding(
       padding: const EdgeInsets.all(16),
-      child: Card(
-        color: cs.secondaryContainer,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              Icon(Icons.tv_outlined, color: cs.onSecondaryContainer),
-              const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      strings.seriesTrackingTitle,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: cs.onSecondaryContainer,
-                      ),
+                child: Text(
+                  strings.episodesLabel,
+                  style: theme.textTheme.titleLarge,
+                ),
+              ),
+              if (seasons.isNotEmpty)
+                IconButton(
+                  key: MediaDetailScreen.refreshEpisodesKey,
+                  tooltip: strings.refreshEpisodes,
+                  onPressed: loading ? null : _refresh,
+                  icon: const Icon(Icons.sync),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ..._body(
+            context,
+            loading: loading,
+            error: error,
+            seasons: seasons,
+            season: season,
+            allEpisodes: allEpisodes,
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _body(
+    BuildContext context, {
+    required bool loading,
+    required String? error,
+    required List<int> seasons,
+    required int? season,
+    required List<Episode> allEpisodes,
+  }) {
+    final strings = context.strings;
+
+    // Loading — the spinner is also shown while a retry runs.
+    if (loading) {
+      final done = context.read<LibraryProvider>().episodesLoadDone(item.id);
+      final total = context.read<LibraryProvider>().episodesLoadTotal(item.id);
+      return [
+        const SizedBox(height: 16),
+        const Center(child: CircularProgressIndicator()),
+        const SizedBox(height: 12),
+        Center(
+          child: Text(
+            total > 0 ? strings.loadingEpisodesProgress(done, total) : '…',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+        const SizedBox(height: 16),
+      ];
+    }
+
+    // A load that produced nothing at all → retry.
+    if (error != null && allEpisodes.isEmpty) {
+      return [
+        CenteredMessage(
+          icon: Icons.cloud_off,
+          title: strings.episodesLoadErrorTitle,
+          message: error,
+          scrollable: false,
+          action: FilledButton.icon(
+            key: MediaDetailScreen.retryEpisodesKey,
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh),
+            label: Text(strings.retry),
+          ),
+        ),
+      ];
+    }
+
+    if (seasons.isEmpty) {
+      return [
+        CenteredMessage(
+          icon: Icons.tv_off_outlined,
+          title: strings.noEpisodes,
+          message: '',
+          scrollable: false,
+        ),
+      ];
+    }
+
+    final selected = season ?? seasons.first;
+    final episodes = allEpisodes
+        .where((episode) => episode.seasonNumber == selected)
+        .toList();
+    final watched = allEpisodes.where((episode) => episode.watched).length;
+
+    return [
+      const SizedBox(height: 8),
+      _progress(context, watched, allEpisodes.length),
+      const SizedBox(height: 16),
+      _seasonSelector(seasons, selected),
+      const SizedBox(height: 12),
+      _bulkActions(selected),
+      const SizedBox(height: 8),
+      for (final episode in episodes) _episodeTile(context, episode),
+    ];
+  }
+
+  /// Derived progress summary (bar + "watched of total").
+  Widget _progress(BuildContext context, int watched, int total) {
+    final theme = Theme.of(context);
+    final strings = context.strings;
+    final percent = seriesProgressPercent(watched, total);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(strings.progress, style: theme.textTheme.titleMedium),
+            ),
+            Text(
+              strings.percentValue(percent.round()),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        LinearProgressIndicator(
+          value: percent / 100,
+          minHeight: 6,
+          borderRadius: BorderRadius.circular(3),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          strings.episodesProgressLabel(watched, total),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Horizontal, scrollable season chips (mobile friendly).
+  Widget _seasonSelector(List<int> seasons, int selected) {
+    final strings = context.strings;
+    return SingleChildScrollView(
+      key: MediaDetailScreen.seasonSelectorKey,
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final number in seasons) ...[
+            ChoiceChip(
+              label: Text(strings.seasonNumberLabel(number)),
+              selected: number == selected,
+              onSelected: (_) => setState(() => _seasonNumber = number),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _bulkActions(int seasonNumber) {
+    final strings = context.strings;
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        OutlinedButton.icon(
+          key: MediaDetailScreen.markSeasonWatchedKey,
+          onPressed: _busy ? null : () => _markSeason(seasonNumber),
+          icon: const Icon(Icons.done_all),
+          label: Text(strings.markSeasonWatched),
+        ),
+        OutlinedButton.icon(
+          key: MediaDetailScreen.resetSeasonKey,
+          onPressed: _busy ? null : () => _resetSeason(seasonNumber),
+          icon: const Icon(Icons.restart_alt),
+          label: Text(strings.resetSeason),
+        ),
+      ],
+    );
+  }
+
+  /// One episode: watched checkbox, number + title, air date / runtime and an
+  /// optional still thumbnail.
+  Widget _episodeTile(BuildContext context, Episode episode) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final strings = context.strings;
+    final name = episode.name?.trim();
+    final title = (name == null || name.isEmpty)
+        ? strings.episodeNumber(episode.episodeNumber)
+        : '${strings.episodeNumber(episode.episodeNumber)} · $name';
+
+    final details = <String>[
+      if (episode.airDate != null)
+        '${strings.airedOn} '
+            '${MaterialLocalizations.of(context).formatMediumDate(episode.airDate!.toLocal())}',
+      if (episode.runtime != null) '${episode.runtime} ${strings.minutes}',
+    ];
+
+    return InkWell(
+      onTap: () => _toggleEpisode(episode, !episode.watched),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Checkbox(
+              key: MediaDetailScreen.episodeCheckboxKey(
+                episode.seasonNumber,
+                episode.episodeNumber,
+              ),
+              value: episode.watched,
+              onChanged: _busy
+                  ? null
+                  : (value) => _toggleEpisode(episode, value ?? false),
+            ),
+            if (episode.stillUrl != null && episode.stillUrl!.isNotEmpty) ...[
+              PosterThumbnail(
+                url: episode.stillUrl,
+                placeholderIcon: Icons.movie_outlined,
+                width: 72,
+                height: 44,
+                iconSize: 20,
+                borderRadius: 6,
+              ),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      fontWeight: episode.watched
+                          ? FontWeight.w400
+                          : FontWeight.w500,
+                      color: episode.watched ? cs.onSurfaceVariant : null,
                     ),
-                    const SizedBox(height: 6),
+                  ),
+                  if (details.isNotEmpty) ...[
+                    const SizedBox(height: 2),
                     Text(
-                      strings.seriesTrackingMessage,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: cs.onSecondaryContainer,
+                      details.join(' · '),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.onSurfaceVariant,
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

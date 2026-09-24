@@ -6,7 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:media_tracker/l10n/app_language.dart';
 import 'package:media_tracker/main.dart';
+import 'package:media_tracker/models/episode.dart';
 import 'package:media_tracker/models/media_item.dart';
+import 'package:media_tracker/models/tmdb_result.dart';
 import 'package:media_tracker/providers/auth_provider.dart';
 import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/providers/theme_provider.dart';
@@ -42,15 +44,96 @@ class _StubTmdb extends TmdbClient {
       );
 }
 
+/// Series metadata stub for the Phase 3b episode tests — no network.
+///
+/// [episodesBySeason] maps a season number to its episode count (season `0`
+/// may be included to prove that specials are skipped). [failSeasons] makes
+/// the matching `fetchSeason` throw.
+class _SeriesTmdb extends TmdbClient {
+  _SeriesTmdb({
+    this.episodesBySeason = const <int, int>{1: 4},
+    this.failSeasons = const <int>{},
+    this.failTv = false,
+  }) : super(
+         httpClient: MockClient((_) async => http.Response('{}', 200)),
+         token: 'fake',
+       );
+
+  final Map<int, int> episodesBySeason;
+  final Set<int> failSeasons;
+
+  /// Mutable so a retry test can let the second attempt succeed.
+  bool failTv;
+
+  int fetchTvCount = 0;
+  final List<int> requestedSeasons = <int>[];
+  final List<String> languages = <String>[];
+
+  @override
+  Future<TmdbTvDetails> fetchTv(int id, {String? language}) async {
+    fetchTvCount++;
+    languages.add(language ?? '<none>');
+    if (failTv) throw const TmdbException('TMDB request failed.');
+    final seasons = episodesBySeason.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return TmdbTvDetails(
+      id: id,
+      name: 'Lost',
+      originalName: 'Lost',
+      year: 2004,
+      numberOfSeasons: episodesBySeason.length,
+      numberOfEpisodes: episodesBySeason.values.fold<int>(0, (a, b) => a + b),
+      seasons: [
+        for (final entry in seasons)
+          TmdbSeasonSummary(
+            seasonNumber: entry.key,
+            name: 'Season ${entry.key}',
+            episodeCount: entry.value,
+          ),
+      ],
+    );
+  }
+
+  @override
+  Future<TmdbSeasonDetails> fetchSeason(
+    int tvId,
+    int seasonNumber, {
+    String? language,
+  }) async {
+    requestedSeasons.add(seasonNumber);
+    languages.add(language ?? '<none>');
+    if (failSeasons.contains(seasonNumber)) {
+      throw const TmdbException('TMDB request failed.');
+    }
+    final count = episodesBySeason[seasonNumber] ?? 0;
+    return TmdbSeasonDetails(
+      seasonNumber: seasonNumber,
+      name: 'Season $seasonNumber',
+      episodes: [
+        for (var i = 1; i <= count; i++)
+          TmdbEpisode(
+            episodeNumber: i,
+            name: 'Pilot $i',
+            airDate: DateTime.utc(2004, 9, i),
+            runtime: 42,
+          ),
+      ],
+    );
+  }
+}
+
 /// Repository stub: an in-memory library that applies tracking writes like
-/// PostgREST would and records them.
+/// PostgREST would and records them, plus an in-memory episode store.
 class _FakeRepo extends MediaRepository {
-  _FakeRepo(this.items);
+  _FakeRepo(this.items, {List<Episode> episodes = const <Episode>[]})
+    : episodes = List<Episode>.of(episodes);
 
   List<MediaItem> items;
+  List<Episode> episodes;
 
   final List<Map<String, dynamic>> writes = [];
   final List<String> deleted = [];
+  int episodeFetchCount = 0;
 
   @override
   Future<List<MediaItem>> fetchAll() async => List<MediaItem>.of(items);
@@ -73,6 +156,113 @@ class _FakeRepo extends MediaRepository {
     deleted.add(id);
     items.removeWhere((item) => item.id == id);
   }
+
+  // ── episodes ──────────────────────────────────────────────────────────────
+
+  @override
+  Future<List<Episode>> fetchEpisodes(String mediaItemId) async {
+    episodeFetchCount++;
+    return episodes
+        .where((episode) => episode.mediaItemId == mediaItemId)
+        .toList()
+      ..sort((a, b) {
+        final bySeason = a.seasonNumber.compareTo(b.seasonNumber);
+        return bySeason != 0
+            ? bySeason
+            : a.episodeNumber.compareTo(b.episodeNumber);
+      });
+  }
+
+  @override
+  Future<List<Episode>> upsertEpisodeMetadata(List<Episode> incoming) async {
+    final saved = <Episode>[];
+    for (final episode in incoming) {
+      final index = episodes.indexWhere(
+        (candidate) =>
+            candidate.mediaItemId == episode.mediaItemId &&
+            candidate.seasonNumber == episode.seasonNumber &&
+            candidate.episodeNumber == episode.episodeNumber,
+      );
+      final stored = index == -1
+          ? episode.copyWith(
+              id:
+                  episode.id ??
+                  'ep-${episode.seasonNumber}-${episode.episodeNumber}',
+            )
+          : episode.copyWith(
+              id: episodes[index].id,
+              // The watch state of an existing row is never touched.
+              watched: episodes[index].watched,
+              watchedAt: episodes[index].watchedAt,
+              createdAt: episodes[index].createdAt,
+            );
+      if (index == -1) {
+        episodes.add(stored);
+      } else {
+        episodes[index] = stored;
+      }
+      saved.add(stored);
+    }
+    return saved;
+  }
+
+  @override
+  Future<List<Episode>> upsertEpisodes(List<Episode> incoming) =>
+      upsertEpisodeMetadata(incoming);
+
+  @override
+  Future<Episode> setWatched(String episodeId, bool watched) async {
+    final index = episodes.indexWhere((episode) => episode.id == episodeId);
+    final updated = _copyWatched(episodes[index], watched);
+    episodes[index] = updated;
+    return updated;
+  }
+
+  @override
+  Future<List<Episode>> markSeasonWatched(
+    String mediaItemId,
+    int seasonNumber,
+  ) async => _setSeason(mediaItemId, seasonNumber, watched: true);
+
+  @override
+  Future<List<Episode>> resetSeason(
+    String mediaItemId,
+    int seasonNumber,
+  ) async => _setSeason(mediaItemId, seasonNumber, watched: false);
+
+  List<Episode> _setSeason(
+    String mediaItemId,
+    int seasonNumber, {
+    required bool watched,
+  }) {
+    final updated = <Episode>[];
+    for (var i = 0; i < episodes.length; i++) {
+      final episode = episodes[i];
+      if (episode.mediaItemId != mediaItemId ||
+          episode.seasonNumber != seasonNumber) {
+        continue;
+      }
+      final next = _copyWatched(episode, watched);
+      episodes[i] = next;
+      updated.add(next);
+    }
+    return updated;
+  }
+
+  Episode _copyWatched(Episode episode, bool watched) => Episode(
+    id: episode.id,
+    mediaItemId: episode.mediaItemId,
+    seasonNumber: episode.seasonNumber,
+    episodeNumber: episode.episodeNumber,
+    name: episode.name,
+    overview: episode.overview,
+    airDate: episode.airDate,
+    stillUrl: episode.stillUrl,
+    runtime: episode.runtime,
+    watched: watched,
+    watchedAt: watched ? DateTime.utc(2026, 1, 1) : null,
+    createdAt: episode.createdAt,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,15 +309,48 @@ MediaItem _book({
   progressCurrent: current,
 );
 
-MediaItem _series({String id = 'series-1', String title = 'Lost'}) => MediaItem(
+MediaItem _series({
+  String id = 'series-1',
+  String title = 'Lost',
+  MediaStatus status = MediaStatus.planned,
+  double? percent,
+  int? totalSeasons = 6,
+  int? totalEpisodes = 121,
+  String? externalId,
+}) => MediaItem(
   id: id,
   kind: MediaKind.series,
   title: title,
   releaseYear: 2004,
   overview: 'Stranded on an island.',
-  totalSeasons: 6,
-  totalEpisodes: 121,
+  totalSeasons: totalSeasons,
+  totalEpisodes: totalEpisodes,
+  status: status,
+  progressPercent: percent,
+  externalSource: externalId == null ? null : 'tmdb',
+  externalId: externalId,
 );
+
+/// Seeds [count] episodes of [seasonNumber] for [mediaItemId].
+List<Episode> _episodes(
+  String mediaItemId, {
+  int seasonNumber = 1,
+  int count = 4,
+  int watched = 0,
+}) => [
+  for (var i = 1; i <= count; i++)
+    Episode(
+      id: 'ep-$seasonNumber-$i',
+      mediaItemId: mediaItemId,
+      seasonNumber: seasonNumber,
+      episodeNumber: i,
+      name: 'Episode $i',
+      airDate: DateTime.utc(2004, 9, i),
+      runtime: 42,
+      watched: i <= watched,
+      watchedAt: i <= watched ? DateTime.utc(2026, 1, 1) : null,
+    ),
+];
 
 /// Opens the app on a tall surface so the whole detail view fits without
 /// scrolling, then taps the entry with [title].
@@ -137,6 +360,7 @@ Future<void> _openDetail(
   required String title,
   AppLanguage language = AppLanguage.en,
   MediaRepository? repository,
+  TmdbClient? tmdb,
 }) async {
   tester.view.physicalSize = const Size(1100, 2600);
   tester.view.devicePixelRatio = 1.0;
@@ -150,7 +374,7 @@ Future<void> _openDetail(
       settingsProvider: SettingsProvider(initial: language),
       authProvider: _FakeAuth(),
       repository: repository ?? _FakeRepo(items),
-      tmdbClient: _StubTmdb(),
+      tmdbClient: tmdb ?? _StubTmdb(),
     ),
   );
   await tester.pumpAndSettle();
@@ -174,7 +398,7 @@ void main() {
   // ───────────────────────────────────────────────────────────────────────────
 
   group('library list', () {
-    testWidgets('shows a status badge and progress for movies and books', (
+    testWidgets('shows a status badge and progress for every kind', (
       tester,
     ) async {
       await _pumpLibrary(
@@ -182,14 +406,16 @@ void main() {
         items: [
           _movie(percent: 40),
           _book(totalPages: 300, percent: 50, current: 150),
-          _series(),
+          _series(percent: 60),
         ],
       );
 
-      // Two progress bars (movie + book), none for the series.
-      expect(find.byType(LinearProgressIndicator), findsNWidgets(2));
+      // A progress bar per row — including the series (derived episode
+      // progress is persisted on media_items since phase 3b).
+      expect(find.byType(LinearProgressIndicator), findsNWidgets(3));
       expect(find.text('40%'), findsOneWidget);
       expect(find.text('50%'), findsOneWidget);
+      expect(find.text('60%'), findsOneWidget);
       // Status badges are rendered per row.
       expect(find.text('In progress'), findsOneWidget);
       expect(find.text('Planned'), findsNWidgets(2));
@@ -355,8 +581,67 @@ void main() {
   });
 
   group('series detail (phase 3b)', () {
-    testWidgets('shows a notice instead of progress controls', (tester) async {
-      final repository = _FakeRepo([_series()]);
+    testWidgets('loads episodes lazily from TMDB and skips specials', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([_series(externalId: '95396')]);
+      final tmdb = _SeriesTmdb(episodesBySeason: {0: 3, 1: 4});
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+        tmdb: tmdb,
+      );
+
+      // Season 1 only — the specials season (0) is never requested.
+      expect(tmdb.fetchTvCount, 1);
+      expect(tmdb.requestedSeasons, <int>[1]);
+      // The fetched episodes were persisted (metadata-only upsert).
+      expect(repository.episodes, hasLength(4));
+      // The season selector and the episode list are rendered.
+      expect(inDetail(find.text('Season 1')), findsOneWidget);
+      expect(inDetail(find.text('Episode 1 · Pilot 1')), findsOneWidget);
+      // No manual status selector / movie-book controls for series.
+      expect(find.byType(SegmentedButton<MediaStatus>), findsNothing);
+      expect(find.byKey(MediaDetailScreen.percentSliderKey), findsNothing);
+      expect(find.byKey(MediaDetailScreen.pageSliderKey), findsNothing);
+      // …but the screen stays usable.
+      expect(inDetail(find.text('Series')), findsWidgets);
+      expect(find.byKey(MediaDetailScreen.deleteButtonKey), findsOneWidget);
+    });
+
+    testWidgets('a second open reuses the cached episodes', (tester) async {
+      final repository = _FakeRepo([_series(externalId: '95396')]);
+      final tmdb = _SeriesTmdb();
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+        tmdb: tmdb,
+      );
+      expect(tmdb.fetchTvCount, 1);
+      expect(repository.episodeFetchCount, 1);
+
+      // Back to the library, then open the same series again.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Lost').first);
+      await tester.pumpAndSettle();
+
+      // No second TMDB request, no second database read.
+      expect(tmdb.fetchTvCount, 1);
+      expect(repository.episodeFetchCount, 1);
+      expect(inDetail(find.text('Season 1')), findsOneWidget);
+    });
+
+    testWidgets('checking an episode derives the progress and status', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([
+        _series(),
+      ], episodes: _episodes('series-1'));
       await _openDetail(
         tester,
         items: repository.items,
@@ -364,27 +649,194 @@ void main() {
         repository: repository,
       );
 
-      expect(
-        inDetail(find.text('Episode tracking coming soon')),
-        findsOneWidget,
-      );
-      expect(find.byKey(MediaDetailScreen.percentSliderKey), findsNothing);
-      expect(find.byKey(MediaDetailScreen.pageSliderKey), findsNothing);
-      expect(find.byKey(MediaDetailScreen.pageFieldKey), findsNothing);
-      // The screen stays usable: metadata and delete are present.
-      expect(inDetail(find.text('Series')), findsWidgets);
-      expect(find.byKey(MediaDetailScreen.deleteButtonKey), findsOneWidget);
+      expect(inDetail(find.text('0 of 4 episodes')), findsOneWidget);
+      await tester.tap(find.byKey(MediaDetailScreen.episodeCheckboxKey(1, 1)));
+      await tester.pumpAndSettle();
+
+      expect(repository.writes.last['progress_percent'], 25);
+      expect(repository.writes.last['status'], 'in_progress');
+      expect(inDetail(find.text('25%')), findsWidgets);
+      expect(inDetail(find.text('1 of 4 episodes')), findsOneWidget);
     });
 
-    testWidgets('German series notice is localized', (tester) async {
+    testWidgets('a partial watch leaves a dropped series dropped', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([
+        _series(status: MediaStatus.dropped),
+      ], episodes: _episodes('series-1'));
       await _openDetail(
         tester,
-        items: [_series()],
+        items: repository.items,
         title: 'Lost',
-        language: AppLanguage.de,
+        repository: repository,
       );
 
-      expect(inDetail(find.text('Folgen-Verfolgung folgt')), findsOneWidget);
+      await tester.tap(find.byKey(MediaDetailScreen.episodeCheckboxKey(1, 1)));
+      await tester.pumpAndSettle();
+
+      expect(repository.writes.last['progress_percent'], 25);
+      expect(repository.writes.last.containsKey('status'), isFalse);
+      expect(inDetail(find.text('Dropped')), findsWidgets);
+    });
+
+    testWidgets(
+      'the progress bar reaches 100 % when all episodes are watched',
+      (tester) async {
+        final repository = _FakeRepo([
+          _series(),
+        ], episodes: _episodes('series-1'));
+        await _openDetail(
+          tester,
+          items: repository.items,
+          title: 'Lost',
+          repository: repository,
+        );
+
+        for (var episode = 1; episode <= 4; episode++) {
+          await tester.tap(
+            find.byKey(MediaDetailScreen.episodeCheckboxKey(1, episode)),
+          );
+          await tester.pumpAndSettle();
+        }
+
+        expect(repository.writes.last['progress_percent'], 100);
+        expect(repository.writes.last['status'], 'completed');
+        expect(inDetail(find.text('Completed')), findsWidgets);
+      },
+    );
+
+    testWidgets('marking a season watched checks every episode', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([
+        _series(),
+      ], episodes: _episodes('series-1'));
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+      );
+
+      await tester.ensureVisible(
+        find.byKey(MediaDetailScreen.markSeasonWatchedKey),
+      );
+      await tester.tap(find.byKey(MediaDetailScreen.markSeasonWatchedKey));
+      await tester.pumpAndSettle();
+
+      expect(repository.writes.last['progress_percent'], 100);
+      expect(repository.writes.last['status'], 'completed');
+      expect(inDetail(find.text('Season marked as watched')), findsOneWidget);
+    });
+
+    testWidgets('resetting a season asks for confirmation', (tester) async {
+      final repository = _FakeRepo([
+        _series(status: MediaStatus.completed, percent: 100),
+      ], episodes: _episodes('series-1', watched: 4));
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+      );
+
+      await tester.ensureVisible(find.byKey(MediaDetailScreen.resetSeasonKey));
+      await tester.tap(find.byKey(MediaDetailScreen.resetSeasonKey));
+      await tester.pumpAndSettle();
+      expect(find.text('Reset this season?'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Reset season'));
+      await tester.pumpAndSettle();
+
+      expect(repository.writes.last['progress_percent'], 0);
+      expect(inDetail(find.text('0%')), findsWidgets);
+      expect(inDetail(find.text('Season reset')), findsOneWidget);
+    });
+
+    testWidgets('a TMDB failure shows a retry that can succeed', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([_series(externalId: '95396')]);
+      final tmdb = _SeriesTmdb(failTv: true);
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+        tmdb: tmdb,
+      );
+
+      expect(
+        inDetail(find.text('Could not load the episodes')),
+        findsOneWidget,
+      );
+      expect(find.byKey(MediaDetailScreen.retryEpisodesKey), findsOneWidget);
+
+      // Backend recovers → retry loads the episodes.
+      tmdb.failTv = false;
+      await tester.tap(find.byKey(MediaDetailScreen.retryEpisodesKey));
+      await tester.pumpAndSettle();
+
+      expect(inDetail(find.text('Season 1')), findsOneWidget);
+      expect(repository.episodes, hasLength(4));
+    });
+
+    testWidgets('a failing season is skipped, the others still load', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([_series(externalId: '95396')]);
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+        tmdb: _SeriesTmdb(
+          episodesBySeason: const <int, int>{1: 4, 2: 3},
+          failSeasons: const <int>{2},
+        ),
+      );
+
+      // Season 1 loaded, season 2 failed without aborting the run.
+      expect(repository.episodes, hasLength(4));
+      expect(inDetail(find.text('Season 1')), findsOneWidget);
+      expect(inDetail(find.text('Season 2')), findsNothing);
+    });
+
+    testWidgets('a series without episodes shows the empty state', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([_series(externalId: '95396')]);
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+        tmdb: _SeriesTmdb(episodesBySeason: const <int, int>{}),
+      );
+
+      expect(inDetail(find.text('No episodes found')), findsOneWidget);
+    });
+
+    testWidgets('German series UI is localized', (tester) async {
+      final repository = _FakeRepo([
+        _series(),
+      ], episodes: _episodes('series-1'));
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        language: AppLanguage.de,
+        repository: repository,
+      );
+
+      expect(inDetail(find.text('Folgen')), findsWidgets);
+      expect(inDetail(find.text('Staffel 1')), findsOneWidget);
+      expect(
+        inDetail(find.text('Staffel als gesehen markieren')),
+        findsOneWidget,
+      );
+      expect(inDetail(find.text('0 von 4 Folgen')), findsOneWidget);
     });
   });
 

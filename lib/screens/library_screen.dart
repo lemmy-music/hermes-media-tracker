@@ -199,19 +199,17 @@ class _MetadataRefreshBanner extends StatelessWidget {
   }
 }
 
-/// A single library row: cover thumbnail, title, kind + status badges and — for
-/// movies and books — a progress bar. Tapping it opens the detail screen.
+/// A single library row: cover thumbnail, title, kind + status badges and a
+/// progress bar. Tapping it opens the detail screen.
 ///
-/// Series rows deliberately show no progress: episode tracking arrives in
-/// Phase 3b.
+/// Series rows show a progress bar too: their status/progress is derived from
+/// the checked-off episodes (Phase 3b) and persisted on `media_items`, so the
+/// list needs no episode data of its own.
 class _MediaTile extends StatelessWidget {
   const _MediaTile({required this.item, required this.posterWidth});
 
   final MediaItem item;
   final double posterWidth;
-
-  /// Whether a progress bar is meaningful for this kind (movies & books).
-  bool get _showsProgress => item.kind != MediaKind.series;
 
   @override
   Widget build(BuildContext context) {
@@ -267,30 +265,28 @@ class _MediaTile extends StatelessWidget {
                         Text('$year', style: theme.textTheme.bodySmall),
                     ],
                   ),
-                  if (_showsProgress) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: LinearProgressIndicator(
-                            value:
-                                (item.progressPercent ?? 0).clamp(0, 100) / 100,
-                            minHeight: 5,
-                            borderRadius: BorderRadius.circular(3),
-                          ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: LinearProgressIndicator(
+                          value:
+                              (item.progressPercent ?? 0).clamp(0, 100) / 100,
+                          minHeight: 5,
+                          borderRadius: BorderRadius.circular(3),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          strings.percentValue(
-                            (item.progressPercent ?? 0).round(),
-                          ),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: cs.onSurfaceVariant,
-                          ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        strings.percentValue(
+                          (item.progressPercent ?? 0).round(),
                         ),
-                      ],
-                    ),
-                  ],
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),

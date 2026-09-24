@@ -260,9 +260,68 @@ class AppStrings {
   /// Fallback shown for an item without a description.
   String get noDescription => _t('noDescription');
 
-  /// Notice shown for series entries until episode tracking lands (Phase 3b).
-  String get seriesTrackingTitle => _t('seriesTrackingTitle');
-  String get seriesTrackingMessage => _t('seriesTrackingMessage');
+  // ───────────────────────────────────────────────────────────────────────────
+  // series episodes (Phase 3b)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// Plain "Season" heading / selector label.
+  String get seasonLabel => _t('seasonLabel');
+
+  /// Plain "Episodes" heading.
+  String get episodesLabel => _t('episodesLabel');
+
+  /// "Season 1" — the season selector chips.
+  String seasonNumberLabel(int number) =>
+      _tParam('seasonNumberLabel', {'number': '$number'});
+
+  /// "Episode 1" — the per-episode number prefix.
+  String episodeNumber(int number) =>
+      _tParam('episodeNumber', {'number': '$number'});
+
+  /// Checkbox label / heading for a watched episode.
+  String get watchedLabel => _t('watchedLabel');
+
+  /// Bulk action: mark the whole season as watched.
+  String get markSeasonWatched => _t('markSeasonWatched');
+
+  /// Bulk action: reset the whole season.
+  String get resetSeason => _t('resetSeason');
+
+  /// Spinner label while episodes are fetched (`done`/`total` seasons).
+  String loadingEpisodesProgress(int done, int total) =>
+      _tParam('loadingEpisodesProgress', {'done': '$done', 'total': '$total'});
+
+  /// Empty state when TMDB has no episodes for the series.
+  String get noEpisodes => _t('noEpisodes');
+
+  /// "Aired on" label in front of an episode's air date.
+  String get airedOn => _t('airedOn');
+
+  /// Runtime label of an episode.
+  String get runtimeLabel => _t('runtimeLabel');
+
+  /// Tooltip of the manual "reload episodes" action.
+  String get refreshEpisodes => _t('refreshEpisodes');
+
+  /// "3 of 12 episodes" — the derived series progress summary.
+  String episodesProgressLabel(int watched, int total) => _tParam(
+    'episodesProgressLabel',
+    {'watched': '$watched', 'total': '$total'},
+  );
+
+  /// Confirmation dialog before resetting a season.
+  String get resetSeasonConfirmTitle => _t('resetSeasonConfirmTitle');
+  String resetSeasonConfirmMessage(int seasonNumber) =>
+      _tParam('resetSeasonConfirmMessage', {'number': '$seasonNumber'});
+
+  /// Title of the episode-load error state.
+  String get episodesLoadErrorTitle => _t('episodesLoadErrorTitle');
+
+  /// Snack bar after a bulk "mark season as watched".
+  String get seasonWatchedDone => _t('seasonWatchedDone');
+
+  /// Snack bar after a bulk "reset season".
+  String get seasonResetDone => _t('seasonResetDone');
 
   /// "Page X of Y" (book progress), e.g. "Seite 42 von 300".
   String pageOf(int current, int total) =>
@@ -435,10 +494,26 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'invalidPage': 'Bitte gib eine gültige Seitenzahl ein.',
     'savePage': 'Seite speichern',
     'noDescription': 'Keine Beschreibung verfügbar.',
-    'seriesTrackingTitle': 'Folgen-Verfolgung folgt',
-    'seriesTrackingMessage':
-        'Das Verfolgen einzelner Folgen und Staffeln kommt im nächsten '
-        'Schritt (Phase 3b). Bis dahin bleibt dieser Eintrag ohne Fortschritt.',
+    'seasonLabel': 'Staffel',
+    'episodesLabel': 'Folgen',
+    'seasonNumberLabel': 'Staffel {number}',
+    'episodeNumber': 'Folge {number}',
+    'watchedLabel': 'Gesehen',
+    'markSeasonWatched': 'Staffel als gesehen markieren',
+    'resetSeason': 'Staffel zurücksetzen',
+    'loadingEpisodesProgress': 'Lade Folgen… ({done}/{total})',
+    'noEpisodes': 'Keine Folgen gefunden',
+    'airedOn': 'Ausgestrahlt am',
+    'runtimeLabel': 'Laufzeit',
+    'refreshEpisodes': 'Folgen aktualisieren',
+    'episodesProgressLabel': '{watched} von {total} Folgen',
+    'resetSeasonConfirmTitle': 'Staffel zurücksetzen?',
+    'resetSeasonConfirmMessage':
+        'Alle gesehenen Folgen von Staffel {number} werden wieder auf „nicht '
+        'gesehen“ gesetzt.',
+    'episodesLoadErrorTitle': 'Folgen konnten nicht geladen werden',
+    'seasonWatchedDone': 'Staffel als gesehen markiert',
+    'seasonResetDone': 'Staffel zurückgesetzt',
     'pageOf': 'Seite {current} von {total}',
     'pageOfUnknownTotal': 'Seite {current}',
     'percentValue': '{value} %',
@@ -589,10 +664,26 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'invalidPage': 'Please enter a valid page number.',
     'savePage': 'Save page',
     'noDescription': 'No description available.',
-    'seriesTrackingTitle': 'Episode tracking coming soon',
-    'seriesTrackingMessage':
-        'Tracking individual episodes and seasons arrives in the next step '
-        '(Phase 3b). Until then this entry stays without progress.',
+    'seasonLabel': 'Season',
+    'episodesLabel': 'Episodes',
+    'seasonNumberLabel': 'Season {number}',
+    'episodeNumber': 'Episode {number}',
+    'watchedLabel': 'Watched',
+    'markSeasonWatched': 'Mark season as watched',
+    'resetSeason': 'Reset season',
+    'loadingEpisodesProgress': 'Loading episodes… ({done}/{total})',
+    'noEpisodes': 'No episodes found',
+    'airedOn': 'Aired on',
+    'runtimeLabel': 'Runtime',
+    'refreshEpisodes': 'Refresh episodes',
+    'episodesProgressLabel': '{watched} of {total} episodes',
+    'resetSeasonConfirmTitle': 'Reset this season?',
+    'resetSeasonConfirmMessage':
+        'Every watched episode of season {number} will be marked unwatched '
+        'again.',
+    'episodesLoadErrorTitle': 'Could not load the episodes',
+    'seasonWatchedDone': 'Season marked as watched',
+    'seasonResetDone': 'Season reset',
     'pageOf': 'Page {current} of {total}',
     'pageOfUnknownTotal': 'Page {current}',
     'percentValue': '{value}%',

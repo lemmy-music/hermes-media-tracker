@@ -38,15 +38,16 @@ Track three media types with different granularity:
 - [x] **Phase 0 — Setup:** Flutter web project skeleton, GitHub Actions → Pages pipeline, app shell (navigation), theme.
 - [x] **Phase 1a — Data layer:** Supabase project + schema (media items, status/progress, episodes), magic-link auth, models + repository, client wiring, library list (loading / empty / error / list).
 - [ ] **Phase 1b — Data layer:** JSON export/import of local state.
-- [~] **Phase 2 — Metadata:** TMDB client (search + details + seasons/episodes) ✓, **OpenLibrary book client** (search + details + ISBN lookup) ✓, search & detail UI (movies/series/books) ✓, DE/EN language toggle ✓; season/episode browser follows in Phase 3b.
-- [x] **Phase 3a — Tracking UI (movies & books):** status (planned / in progress / completed / dropped), progress percent for movies, page-based progress for books (percent fallback), editable started/completed timestamps, delete with confirmation. Series entries show a "phase 3b" notice instead of tracking controls.
-- [ ] **Phase 3b — Series tracking (episodes):** season/episode browsing, per-episode check-off, bulk "mark season". The series status and progress are **derived** from the checked episodes (e.g. 10/19 → 53 % and "in progress"; all → "completed").
+- [x] **Phase 2 — Metadata:** TMDB client (search + details + seasons/episodes) ✓, **OpenLibrary book client** (search + details + ISBN lookup) ✓, search & detail UI (movies/series/books) ✓, DE/EN language toggle ✓, language-driven metadata refresh ✓ (episodes too, since Phase 3b).
+- [x] **Phase 3a — Tracking UI (movies & books):** status (planned / in progress / completed / dropped), progress percent for movies, page-based progress for books (percent fallback), editable started/completed timestamps, delete with confirmation. Series entries showed a "phase 3b" notice instead of tracking controls (replaced by Phase 3b).
+- [x] **Phase 3b — Series tracking (episodes):** season/episode browser in the series detail view (lazy-loaded from TMDB on first open, localized), per-episode check-off, bulk "mark season" / "reset season" (with confirmation). The series status and progress are **derived** from the checked episodes (10/19 → 52.6 % and "in progress"; all → "completed"; `dropped` is never overwritten; `started_at`/`completed_at` fill gaps) and persisted on `media_items`, so the library list and stats keep reading the same columns. The manual status selector is hidden for series. The language switch also re-fetches the stored episode metadata (watch state preserved).
 - [ ] **Phase 5 — Polish:** filters/sorting, stats, empty states, offline behaviour.
 - [ ] **Phase 6 — Bonus:** ISBN scanner (`mobile_scanner`).
 
 ## Known limitations / backlog
 
 - **Book titles are not localized.** OpenLibrary exposes titles at *work* level, which is usually the original title ("The Lord of the Rings", not "Der Herr der Ringe"); German titles only exist on the individual *editions*. A localized book title would need an extra editions lookup per book. *Deliberately deferred to the very end — current behaviour is acceptable.*
+- **Specials (season 0) are not tracked.** The episode loader fetches only the numbered seasons (`season_number >= 1`); the specials season is skipped so it does not skew the derived progress (it is often a large, incomplete extras bucket). This is a pragmatic call for Phase 3b — specials can be added later behind their own toggle.
 
 ## Open decisions
 1. ~~Supabase project credentials + whether to use Supabase Auth (login) or a single-user setup.~~ → Project `vqpkejsxfvaovhdomllw`; **magic-link (email) auth**, RLS is owner-only.

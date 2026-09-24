@@ -1,14 +1,27 @@
 import 'package:flutter/foundation.dart';
 
 import '../l10n/app_language.dart';
+import '../models/episode.dart';
 import '../models/media_item.dart';
 import '../models/tmdb_result.dart';
 import '../repositories/media_repository.dart';
 import '../services/tmdb_client.dart';
+import 'series_rules.dart';
 import 'settings_provider.dart';
 import 'tracking_rules.dart';
 
 /// Outcome of one metadata refresh run.
+///
+/// The counters describe **media items**, not requests: `total` is the number
+/// of TMDB-backed library entries, `updated` those whose metadata snapshot was
+/// re-fetched and stored, `failed` those that kept their snapshot because
+/// loading or saving failed.
+///
+/// Series additionally have their **episodes** refreshed in the new language
+/// as part of the item's own update (see [LibraryProvider.refreshMetadata]).
+/// A failing season request there is skipped and deliberately does **not**
+/// count as a failure — it does not abort the run and never fails the item,
+/// whose primary metadata was already written.
 @immutable
 class MetadataRefreshResult {
   const MetadataRefreshResult({
@@ -111,6 +124,32 @@ class LibraryProvider extends ChangeNotifier {
   Future<MetadataRefreshResult>? _activeRefresh;
 
   bool _disposed = false;
+
+  // ── series episodes (Phase 3b) ─────────────────────────────────────────────
+  //
+  // Episodes are cached per media item. The metadata is loaded lazily on the
+  // first open of a series detail view and only re-fetched on an explicit
+  // refresh or a language change — never per navigation.
+
+  /// Episodes of a media item, ordered by season / episode.
+  final Map<String, List<Episode>> _episodesByItem = <String, List<Episode>>{};
+
+  /// Item ids whose episodes have been loaded (even when the result was empty,
+  /// so an empty series is not re-fetched on every open).
+  final Set<String> _episodesLoaded = <String>{};
+
+  /// Item ids with an episode load in flight (guards against a second run).
+  final Set<String> _episodesActive = <String>{};
+
+  /// Item ids currently loading episodes from TMDB.
+  final Set<String> _episodesLoading = <String>{};
+
+  /// Per-item progress of the current TMDB load (seasons handled / total).
+  final Map<String, int> _episodesLoadDone = <String, int>{};
+  final Map<String, int> _episodesLoadTotal = <String, int>{};
+
+  /// Per-item user-facing load error, if the last attempt failed.
+  final Map<String, String> _episodesError = <String, String>{};
 
   // ───────────────────────────────────────────────────────────────────────────
   // library list
@@ -232,6 +271,425 @@ class LibraryProvider extends ChangeNotifier {
       throw const MediaRepositoryException('This item has not been saved yet.');
     }
     return id;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // series episodes (Phase 3b)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// The cached episodes of [itemId] (empty when not loaded yet).
+  List<Episode> episodesFor(String? itemId) {
+    if (itemId == null) return const <Episode>[];
+    return _episodesByItem[itemId] ?? const <Episode>[];
+  }
+
+  /// `true` while episodes of [itemId] are being loaded from TMDB.
+  bool episodesLoading(String? itemId) =>
+      itemId != null && _episodesLoading.contains(itemId);
+
+  /// Seasons already handled in the current load of [itemId].
+  int episodesLoadDone(String? itemId) => _episodesLoadDone[itemId] ?? 0;
+
+  /// Seasons to handle in the current load of [itemId] (`0` while unknown).
+  int episodesLoadTotal(String? itemId) => _episodesLoadTotal[itemId] ?? 0;
+
+  /// The user-facing message of the last failed episode load, or `null`.
+  String? episodesError(String? itemId) =>
+      itemId == null ? null : _episodesError[itemId];
+
+  /// The distinct season numbers of [itemId], ascending (season `0` = specials
+  /// is excluded by the loader, see [_regularSeasonNumbers]).
+  List<int> seasonsFor(String? itemId) {
+    final numbers = <int>{
+      for (final episode in episodesFor(itemId)) episode.seasonNumber,
+    }.toList();
+    numbers.sort();
+    return numbers;
+  }
+
+  /// The episodes of [itemId] that belong to [seasonNumber].
+  List<Episode> episodesOfSeason(String? itemId, int seasonNumber) =>
+      episodesFor(
+        itemId,
+      ).where((episode) => episode.seasonNumber == seasonNumber).toList();
+
+  /// Ensures the episodes of [item] are loaded.
+  ///
+  /// Lazy by design:
+  ///  * Stored rows are used as-is (no TMDB request).
+  ///  * Only when the database holds **no** episodes yet are seasons/following
+  ///    episodes fetched from TMDB and persisted (metadata only — a fresh row
+  ///    starts unwatched). Specials (season `0`) are skipped, see
+  ///    [_regularSeasonNumbers].
+  ///  * A second call while a load is running (or after a successful one) is a
+  ///    no-op; use [refreshEpisodes] for a forced reload.
+  Future<void> ensureEpisodes(MediaItem item) async {
+    final id = item.id;
+    if (id == null) return;
+    if (_episodesLoaded.contains(id) || _episodesActive.contains(id)) return;
+    _episodesActive.add(id);
+    try {
+      List<Episode> stored;
+      try {
+        stored = await _repository.fetchEpisodes(id);
+      } on MediaRepositoryException catch (error) {
+        _episodesError[id] = error.message;
+        return;
+      }
+      if (stored.isNotEmpty) {
+        _episodesByItem[id] = stored;
+        _episodesLoaded.add(id);
+        _episodesError.remove(id);
+        _notify();
+        // Keep the derived status/progress in sync with the stored episodes
+        // (only writes when something actually changed).
+        await _persistDerivedSafely(item, stored);
+        return;
+      }
+      await _loadEpisodesFromTmdb(item);
+    } finally {
+      _episodesActive.remove(id);
+    }
+  }
+
+  /// Forces a reload of [item]'s episode metadata from TMDB in the active
+  /// language, preserving the stored watch state.
+  ///
+  /// Used by the manual refresh action on the series detail view.
+  Future<void> refreshEpisodes(MediaItem item) async {
+    final id = item.id;
+    if (id == null || _episodesActive.contains(id)) return;
+    _episodesActive.add(id);
+    _episodesLoaded.remove(id);
+    try {
+      await _loadEpisodesFromTmdb(item);
+    } finally {
+      _episodesActive.remove(id);
+    }
+  }
+
+  /// Toggles the watched state of a single [episode] and persists the derived
+  /// series status / progress.
+  Future<void> setEpisodeWatched(
+    MediaItem item,
+    Episode episode,
+    bool watched,
+  ) async {
+    final itemId = _requireId(item);
+    final episodeId = episode.id;
+    if (episodeId == null) {
+      throw const MediaRepositoryException('This episode has not been saved.');
+    }
+    final updated = await _repository.setWatched(episodeId, watched);
+    _mergeEpisodes(itemId, <Episode>[updated]);
+    await _persistDerived(item, episodesFor(itemId));
+  }
+
+  /// Marks **every** episode of [seasonNumber] as watched.
+  Future<void> markSeasonWatched(MediaItem item, int seasonNumber) async {
+    final itemId = _requireId(item);
+    final updated = await _repository.markSeasonWatched(itemId, seasonNumber);
+    _mergeEpisodes(itemId, updated);
+    await _persistDerived(item, episodesFor(itemId));
+  }
+
+  /// Clears the watched state of every episode of [seasonNumber].
+  Future<void> resetSeason(MediaItem item, int seasonNumber) async {
+    final itemId = _requireId(item);
+    final updated = await _repository.resetSeason(itemId, seasonNumber);
+    _mergeEpisodes(itemId, updated);
+    await _persistDerived(item, episodesFor(itemId));
+  }
+
+  /// Loads [item]'s seasons from TMDB, persists the metadata and fills the
+  /// cache. The stored watch state of already-known episodes is preserved.
+  ///
+  /// A failing season request is skipped (and the run continues) — a series
+  /// with at least one successful season loads; a run where *nothing* could be
+  /// loaded surfaces a retry-able error.
+  Future<void> _loadEpisodesFromTmdb(MediaItem item) async {
+    final id = item.id;
+    if (id == null) return;
+
+    _episodesLoading.add(id);
+    _episodesLoadDone[id] = 0;
+    _episodesLoadTotal[id] = 0;
+    _episodesError.remove(id);
+    _notify();
+
+    try {
+      final tmdbId = int.tryParse(item.externalId ?? '');
+      if (tmdbId == null) {
+        // Not a TMDB-backed series — nothing to load, but do not retry.
+        _episodesByItem[id] = const <Episode>[];
+        _episodesLoaded.add(id);
+        return;
+      }
+
+      final language = _settings.language.tmdbCode;
+      final details = await _tmdbClient.fetchTv(tmdbId, language: language);
+
+      // The stored state (empty during the first load) keyed by season:episode.
+      final previous = <String, Episode>{
+        for (final episode in episodesFor(id))
+          '${episode.seasonNumber}:${episode.episodeNumber}': episode,
+      };
+
+      final seasonNumbers = _regularSeasonNumbers(details, item);
+      _episodesLoadTotal[id] = seasonNumbers.length;
+      _notify();
+
+      final collected = <Episode>[];
+      var failures = 0;
+      String? lastFailure;
+
+      for (final seasonNumber in seasonNumbers) {
+        try {
+          final season = await _tmdbClient.fetchSeason(
+            tmdbId,
+            seasonNumber,
+            language: language,
+          );
+          final previousFor = previous;
+          collected.addAll(<Episode>[
+            for (final episode in season.episodes)
+              _episodeFromTmdb(
+                id,
+                seasonNumber,
+                episode,
+                previous: previousFor['$seasonNumber:${episode.episodeNumber}'],
+              ),
+          ]);
+        } catch (error) {
+          failures++;
+          lastFailure = error is TmdbException
+              ? error.message
+              : error.toString();
+        } finally {
+          _episodesLoadDone[id] = (_episodesLoadDone[id] ?? 0) + 1;
+          _notify();
+        }
+      }
+
+      if (collected.isEmpty && failures > 0) {
+        _episodesError[id] = lastFailure ?? 'Could not load the episodes.';
+        return;
+      }
+
+      if (collected.isNotEmpty) {
+        // Metadata-only upsert: the watch state is never part of the payload.
+        final saved = await _repository.upsertEpisodeMetadata(collected);
+        _episodesByItem[id] = saved.isEmpty ? collected : _sorted(saved);
+      } else {
+        _episodesByItem[id] = const <Episode>[];
+      }
+      _episodesLoaded.add(id);
+      _episodesError.remove(id);
+      _notify();
+      await _persistDerivedSafely(item, episodesFor(id));
+    } on TmdbException catch (error) {
+      _episodesError[id] = error.message;
+    } on MediaRepositoryException catch (error) {
+      _episodesError[id] = error.message;
+    } finally {
+      _episodesLoading.remove(id);
+      _notify();
+    }
+  }
+
+  /// The season numbers to fetch: every **numbered** season TMDB reports
+  /// (`season_number >= 1`), falling back to `1..number_of_seasons` when the
+  /// API response has no usable `seasons` array.
+  ///
+  /// **Specials (season `0`) are deliberately excluded**: they are behind-the-
+  /// scenes extras rather than part of the main watch order, they would skew
+  /// the derived percent, and they are frequently empty. Documented in
+  /// PROJECT.md.
+  List<int> _regularSeasonNumbers(TmdbTvDetails details, MediaItem item) {
+    final numbered = <int>{
+      for (final season in details.seasons)
+        if (season.seasonNumber >= 1) season.seasonNumber,
+    }.toList();
+    if (numbered.isNotEmpty) {
+      numbered.sort();
+      return numbered;
+    }
+    final count = details.numberOfSeasons ?? item.totalSeasons ?? 0;
+    if (count > 0) return <int>[for (var i = 1; i <= count; i++) i];
+    return const <int>[];
+  }
+
+  /// Builds an [Episode] from a TMDB episode, keeping the watch state of
+  /// [previous] (when an episode with the same season/number is already known).
+  Episode _episodeFromTmdb(
+    String mediaItemId,
+    int seasonNumber,
+    TmdbEpisode episode, {
+    Episode? previous,
+  }) {
+    return Episode(
+      id: previous?.id,
+      mediaItemId: mediaItemId,
+      seasonNumber: seasonNumber,
+      episodeNumber: episode.episodeNumber,
+      name: episode.name,
+      overview: episode.overview,
+      airDate: episode.airDate,
+      stillUrl: episode.stillUrl,
+      runtime: episode.runtime,
+      watched: previous?.watched ?? false,
+      watchedAt: previous?.watchedAt,
+      createdAt: previous?.createdAt,
+    );
+  }
+
+  /// Replaces the episodes of [itemId] that match [updated] (by season /
+  /// episode) and keeps the list sorted.
+  void _mergeEpisodes(String itemId, List<Episode> updated) {
+    if (updated.isEmpty) return;
+    final current = List<Episode>.of(episodesFor(itemId));
+    for (final episode in updated) {
+      final index = current.indexWhere(
+        (candidate) =>
+            candidate.seasonNumber == episode.seasonNumber &&
+            candidate.episodeNumber == episode.episodeNumber,
+      );
+      if (index == -1) {
+        current.add(episode);
+      } else {
+        current[index] = episode;
+      }
+    }
+    _episodesByItem[itemId] = _sorted(current);
+    _notify();
+  }
+
+  List<Episode> _sorted(List<Episode> episodes) {
+    final sorted = List<Episode>.of(episodes)
+      ..sort((a, b) {
+        final bySeason = a.seasonNumber.compareTo(b.seasonNumber);
+        if (bySeason != 0) return bySeason;
+        return a.episodeNumber.compareTo(b.episodeNumber);
+      });
+    return sorted;
+  }
+
+  /// Counts the watched episodes of [episodes] and persists [seriesDerivedFields]
+  /// on [item] — the write is skipped when nothing would change.
+  Future<void> _persistDerived(MediaItem item, List<Episode> episodes) async {
+    final id = _requireId(item);
+    final watched = episodes.where((episode) => episode.watched).length;
+    final fields = seriesDerivedFields(
+      item,
+      watchedCount: watched,
+      totalCount: episodes.length,
+      now: _clock(),
+    );
+    if (!_hasTrackingChange(item, fields)) return;
+    final updated = await _repository.updateTracking(id, fields);
+    _replace(updated);
+  }
+
+  /// Like [_persistDerived] but swallows a write failure — used while loading,
+  /// where a stale derived row must not keep the episodes from showing.
+  Future<void> _persistDerivedSafely(
+    MediaItem item,
+    List<Episode> episodes,
+  ) async {
+    try {
+      await _persistDerived(item, episodes);
+    } on MediaRepositoryException {
+      // Non-fatal: the episodes are shown, the derived row is recomputed on
+      // the next change.
+    }
+  }
+
+  /// `true` when [fields] would actually change [item] (so a no-op write — and
+  /// its `updated_at` bump — is avoided when a series detail view is reopened).
+  bool _hasTrackingChange(MediaItem item, Map<String, dynamic> fields) {
+    for (final entry in fields.entries) {
+      switch (entry.key) {
+        case 'progress_percent':
+          final next = entry.value;
+          final current = item.progressPercent;
+          if (next is num) {
+            if (current == null || (current - next).abs() > 0.0001) return true;
+          } else if (current != null) {
+            return true;
+          }
+        case 'status':
+          if (entry.value != item.status.wire) return true;
+        case 'started_at':
+          if (entry.value != null && item.startedAt == null) return true;
+        case 'completed_at':
+          if (entry.value != null && item.completedAt == null) return true;
+      }
+    }
+    return false;
+  }
+
+  /// Re-fetches the stored episode metadata of a series in [language],
+  /// preserving `watched` / `watched_at`.
+  ///
+  /// Called by the language-driven metadata refresh. A failing season request
+  /// is skipped — it never aborts the run and never fails the media item.
+  Future<void> _refreshSeriesEpisodes(
+    MediaItem item,
+    AppLanguage language,
+  ) async {
+    final id = item.id;
+    final tmdbId = int.tryParse(item.externalId ?? '');
+    if (id == null || tmdbId == null) return;
+
+    List<Episode> stored;
+    try {
+      stored = await _repository.fetchEpisodes(id);
+    } catch (_) {
+      return;
+    }
+    if (stored.isEmpty) return; // lazy load fills a series with no episodes
+
+    final previous = <String, Episode>{
+      for (final episode in stored)
+        '${episode.seasonNumber}:${episode.episodeNumber}': episode,
+    };
+    final seasonNumbers = <int>{
+      for (final episode in stored) episode.seasonNumber,
+    }.toList()..sort();
+
+    final refreshed = <Episode>[];
+    for (final seasonNumber in seasonNumbers) {
+      try {
+        final season = await _tmdbClient.fetchSeason(
+          tmdbId,
+          seasonNumber,
+          language: language.tmdbCode,
+        );
+        for (final episode in season.episodes) {
+          refreshed.add(
+            _episodeFromTmdb(
+              id,
+              seasonNumber,
+              episode,
+              previous: previous['$seasonNumber:${episode.episodeNumber}'],
+            ),
+          );
+        }
+      } catch (_) {
+        // One season failed: keep its stored rows, keep going.
+        continue;
+      }
+    }
+    if (refreshed.isEmpty) return;
+
+    try {
+      final saved = await _repository.upsertEpisodeMetadata(refreshed);
+      if (_episodesByItem.containsKey(id)) {
+        _mergeEpisodes(id, saved.isEmpty ? refreshed : saved);
+      }
+    } catch (_) {
+      // Keep the stored episode snapshot; the run continues.
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -358,6 +816,11 @@ class LibraryProvider extends ChangeNotifier {
               : item.totalEpisodes,
         ),
       );
+      // A series also carries localized episode metadata — refresh it in the
+      // same language. Failures here never fail the item (see the method).
+      if (isSeries) {
+        await _refreshSeriesEpisodes(item, language);
+      }
       return true;
     } catch (_) {
       // Single-item failure: keep the old data, keep going.
