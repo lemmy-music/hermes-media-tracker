@@ -193,6 +193,35 @@ class MediaItem {
     );
   }
 
+  /// A copy **without** the server-managed identity columns (`id`,
+  /// `createdAt`, `updatedAt`).
+  ///
+  /// Used by the JSON import: the export carries the original ids so episodes
+  /// can be re-linked, but the database must assign fresh ones (and the
+  /// current user) on insert — see `DataPortService.importData`.
+  MediaItem asNew() {
+    return MediaItem(
+      kind: kind,
+      title: title,
+      originalTitle: originalTitle,
+      releaseYear: releaseYear,
+      overview: overview,
+      posterUrl: posterUrl,
+      externalSource: externalSource,
+      externalId: externalId,
+      authors: authors,
+      totalPages: totalPages,
+      isbn: isbn,
+      totalSeasons: totalSeasons,
+      totalEpisodes: totalEpisodes,
+      status: status,
+      progressPercent: progressPercent,
+      progressCurrent: progressCurrent,
+      startedAt: startedAt,
+      completedAt: completedAt,
+    );
+  }
+
   /// Serialises the item to PostgREST column names.
   ///
   /// `null` values are omitted so that Postgres defaults apply (notably

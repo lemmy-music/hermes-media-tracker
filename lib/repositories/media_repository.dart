@@ -171,6 +171,19 @@ class MediaRepository {
     }, fallback: 'Could not delete the item.');
   }
 
+  /// Deletes **every** media item of the signed-in user.
+  ///
+  /// Backs the "overwrite" import mode. The episodes cascade in Postgres
+  /// (`ON DELETE CASCADE`), so a single statement clears the whole library.
+  /// RLS already restricts the delete to the owner; the `id is not null`
+  /// filter only satisfies PostgREST, which refuses an unfiltered delete.
+  Future<void> deleteAll() {
+    _requireUserId();
+    return _guard(() async {
+      await client.from('media_items').delete().not('id', 'is', null);
+    }, fallback: 'Could not delete your data.');
+  }
+
   // ───────────────────────────────────────────────────────────────────────────
   // tracking state (Phase 3a)
   // ───────────────────────────────────────────────────────────────────────────
@@ -249,6 +262,23 @@ class MediaRepository {
           .order('episode_number', ascending: true);
       return rows.map(Episode.fromMap).toList();
     }, fallback: 'Could not load the episodes.');
+  }
+
+  /// Loads **every** episode of the signed-in user, ordered by their parent
+  /// item / season / episode.
+  ///
+  /// Backs the JSON export, which needs the full episode list in one request.
+  /// RLS already restricts the query to the owner.
+  Future<List<Episode>> fetchAllEpisodes() {
+    return _guard(() async {
+      final rows = await client
+          .from('episodes')
+          .select()
+          .order('media_item_id', ascending: true)
+          .order('season_number', ascending: true)
+          .order('episode_number', ascending: true);
+      return rows.map(Episode.fromMap).toList();
+    }, fallback: 'Could not load your episodes.');
   }
 
   /// Inserts or updates [episodes] (matched on

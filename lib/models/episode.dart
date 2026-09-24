@@ -92,6 +92,27 @@ class Episode {
     );
   }
 
+  /// A copy **without** the server-managed identity columns (`id`,
+  /// `createdAt`).
+  ///
+  /// Used by the JSON import so the database assigns a fresh id (and the
+  /// current user) — the watch state ([watched], [watchedAt]) is kept on
+  /// purpose. See `DataPortService.importData`.
+  Episode asNew() {
+    return Episode(
+      mediaItemId: mediaItemId,
+      seasonNumber: seasonNumber,
+      episodeNumber: episodeNumber,
+      name: name,
+      overview: overview,
+      airDate: airDate,
+      stillUrl: stillUrl,
+      runtime: runtime,
+      watched: watched,
+      watchedAt: watchedAt,
+    );
+  }
+
   /// Serialises the episode to PostgREST column names.
   ///
   /// `null` values are omitted so that Postgres defaults apply. Note that

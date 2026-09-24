@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
+import '../models/import_error.dart';
 import '../models/media_item.dart';
 import '../models/tmdb_result.dart';
 import '../providers/settings_provider.dart';
@@ -195,6 +196,86 @@ class AppStrings {
   String get languageLabel => _t('languageLabel');
   String get signOut => _t('signOut');
   String get tmdbAttribution => _t('tmdbAttribution');
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // JSON export / import (Phase 1b)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// Settings sheet: start an export.
+  String get dataExport => _t('dataExport');
+
+  /// Settings sheet: subtitle of the export row.
+  String get dataExportSubtitle => _t('dataExportSubtitle');
+
+  /// Settings sheet: start an import.
+  String get dataImport => _t('dataImport');
+
+  /// Settings sheet: subtitle of the import row.
+  String get dataImportSubtitle => _t('dataImportSubtitle');
+
+  /// Progress feedback while the export runs.
+  String get exporting => _t('exporting');
+
+  /// Success feedback after a completed export.
+  String get exportDone => _t('exportDone');
+
+  /// Title of the export error dialog.
+  String get exportFailedTitle => _t('exportFailedTitle');
+
+  /// Feedback when the user dismissed the native save dialog.
+  String get exportCancelled => _t('exportCancelled');
+
+  /// Progress feedback while the import writes.
+  String get importing => _t('importing');
+
+  /// Title of the dialog that asks merge vs overwrite.
+  String get importModeTitle => _t('importModeTitle');
+
+  /// Body of the merge/overwrite dialog.
+  String get importModeMessage => _t('importModeMessage');
+
+  /// Merge action — existing data is kept, duplicates are skipped.
+  String get importMerge => _t('importMerge');
+
+  /// Overwrite action — everything is deleted first.
+  String get importOverwrite => _t('importOverwrite');
+
+  /// Title of the "delete everything?" confirmation.
+  String get importOverwriteConfirmTitle => _t('importOverwriteConfirmTitle');
+
+  /// Body of the overwrite confirmation.
+  String get importOverwriteConfirmMessage =>
+      _t('importOverwriteConfirmMessage');
+
+  /// Destructive confirm button of the overwrite dialog.
+  String get importOverwriteConfirmAction => _t('importOverwriteConfirmAction');
+
+  /// Title of the import error dialog.
+  String get importFailedTitle => _t('importFailedTitle');
+
+  /// Generic follow-up when an import fails for an unknown reason.
+  String get importUnknownError => _t('importUnknownError');
+
+  /// Dialog acknowledgement.
+  String get ok => _t('ok');
+
+  /// Result counter snack bar — `{added}` new, `{skipped}` already there,
+  /// `{errors}` could not be read.
+  String importSummary(int added, int skipped, int errors) => _tParam(
+    'importSummary',
+    {'added': '$added', 'skipped': '$skipped', 'errors': '$errors'},
+  );
+
+  /// Localized explanation for a file the import rejected.
+  String importErrorMessage(ImportErrorCode code) => switch (code) {
+    ImportErrorCode.emptyFile => _t('importErrorEmptyFile'),
+    ImportErrorCode.invalidJson => _t('importErrorInvalidJson'),
+    ImportErrorCode.notJsonObject => _t('importErrorNotJsonObject'),
+    ImportErrorCode.wrongFormat => _t('importErrorWrongFormat'),
+    ImportErrorCode.unsupportedVersion => _t('importErrorUnsupportedVersion'),
+    ImportErrorCode.missingMediaItems => _t('importErrorMissingMediaItems'),
+    ImportErrorCode.missingEpisodes => _t('importErrorMissingEpisodes'),
+  };
 
   // ───────────────────────────────────────────────────────────────────────────
   // detail sheet meta
@@ -469,6 +550,48 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'tmdbAttribution':
         'Dieses Produkt verwendet die TMDB-API, wird aber nicht von TMDB '
         'unterstützt oder zertifiziert.',
+    // JSON export / import (phase 1b)
+    'dataExport': 'Daten exportieren',
+    'dataExportSubtitle': 'Deine Bibliothek als JSON-Datei sichern',
+    'dataImport': 'Daten importieren',
+    'dataImportSubtitle':
+        'Bibliothek aus einer Sicherungsdatei wiederherstellen',
+    'exporting': 'Daten werden exportiert…',
+    'exportDone': 'Export abgeschlossen',
+    'exportFailedTitle': 'Export fehlgeschlagen',
+    'exportCancelled': 'Export abgebrochen',
+    'importing': 'Daten werden importiert…',
+    'importModeTitle': 'Import-Modus',
+    'importModeMessage':
+        'Wie sollen die importierten Daten behandelt werden?\n\n'
+        '• Zusammenführen: Deine aktuellen Einträge bleiben erhalten, bereits '
+        'vorhandene werden übersprungen.\n'
+        '• Überschreiben: Alle aktuellen Daten werden vorher gelöscht.',
+    'importMerge': 'Zusammenführen',
+    'importOverwrite': 'Überschreiben',
+    'importOverwriteConfirmTitle': 'Alle aktuellen Daten löschen?',
+    'importOverwriteConfirmMessage':
+        'Alle deine aktuellen Einträge und Folgen werden gelöscht, bevor die '
+        'Datei importiert wird. Das kann nicht rückgängig gemacht werden.\n\n'
+        'Fortfahren?',
+    'importOverwriteConfirmAction': 'Löschen und importieren',
+    'importFailedTitle': 'Import fehlgeschlagen',
+    'importUnknownError': 'Unbekannter Fehler.',
+    'ok': 'OK',
+    'importSummary':
+        '{added} hinzugefügt, {skipped} übersprungen, '
+        '{errors} Fehler',
+    'importErrorEmptyFile': 'Die Datei ist leer.',
+    'importErrorInvalidJson': 'Die Datei enthält kein gültiges JSON.',
+    'importErrorNotJsonObject':
+        'Die Datei hat ein unerwartetes Format: Das oberste Element ist kein '
+        'JSON-Objekt.',
+    'importErrorWrongFormat': 'Die Datei ist keine Media-Tracker-Sicherung.',
+    'importErrorUnsupportedVersion':
+        'Diese Version der Sicherungsdatei wird nicht unterstützt.',
+    'importErrorMissingMediaItems':
+        'In der Datei fehlt die Liste der Medieneinträge.',
+    'importErrorMissingEpisodes': 'In der Datei fehlt die Liste der Folgen.',
     // detail meta
     'minutes': 'Min.',
     'seasonOne': '{count} Staffel',
@@ -640,6 +763,44 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'tmdbAttribution':
         'This product uses the TMDB API but is not endorsed or certified by '
         'TMDB.',
+    // JSON export / import (phase 1b)
+    'dataExport': 'Export data',
+    'dataExportSubtitle': 'Back up your library as a JSON file',
+    'dataImport': 'Import data',
+    'dataImportSubtitle': 'Restore your library from a backup file',
+    'exporting': 'Exporting your data…',
+    'exportDone': 'Export complete',
+    'exportFailedTitle': 'Export failed',
+    'exportCancelled': 'Export cancelled',
+    'importing': 'Importing your data…',
+    'importModeTitle': 'Import mode',
+    'importModeMessage':
+        'How should the imported data be handled?\n\n'
+        '• Merge: your current entries stay, existing ones are skipped.\n'
+        '• Overwrite: all current data is deleted first.',
+    'importMerge': 'Merge',
+    'importOverwrite': 'Overwrite',
+    'importOverwriteConfirmTitle': 'Delete all current data?',
+    'importOverwriteConfirmMessage':
+        'All your current entries and episodes will be deleted before the '
+        'file is imported. This cannot be undone.\n\n'
+        'Continue?',
+    'importOverwriteConfirmAction': 'Delete & import',
+    'importFailedTitle': 'Import failed',
+    'importUnknownError': 'Unknown error.',
+    'ok': 'OK',
+    'importSummary': '{added} added, {skipped} skipped, {errors} errors',
+    'importErrorEmptyFile': 'The file is empty.',
+    'importErrorInvalidJson': 'The file does not contain valid JSON.',
+    'importErrorNotJsonObject':
+        'The file has an unexpected format: the root element is not a JSON '
+        'object.',
+    'importErrorWrongFormat': 'This file is not a Media Tracker backup.',
+    'importErrorUnsupportedVersion':
+        'This backup file version is not supported.',
+    'importErrorMissingMediaItems':
+        'The file is missing the list of media items.',
+    'importErrorMissingEpisodes': 'The file is missing the list of episodes.',
     // detail meta
     'minutes': 'min',
     'seasonOne': '{count} season',
