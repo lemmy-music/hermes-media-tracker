@@ -53,7 +53,11 @@ Track three media types with different granularity:
 - **Specials (season 0) are not tracked.** The episode loader fetches only the numbered seasons (`season_number >= 1`); the specials season is skipped so it does not skew the derived progress (it is often a large, incomplete extras bucket). This is a pragmatic call for Phase 3b — specials can be added later behind their own toggle.
 - **ISBN lookup stores the *work* key while showing *edition* metadata.** `/isbn/<isbn>.json` returns an edition (`/books/OL…M`), but the app tracks books per work, so an ISBN hit is resolved to the edition's linked work (`works[0].key`) and stored with that work key as `external_id` (title/cover/pages/year come from the edition payload, author names from a best-effort `q=isbn:…` search call). Upside: an ISBN add dedups against a normal title search. Trade-off: two different editions (different ISBNs) of the same work count as one entry, and edition-specific metadata (publisher, that exact printing) is not modelled.
 
-## Open decisions
-1. ~~Supabase project credentials + whether to use Supabase Auth (login) or a single-user setup.~~ → Project `vqpkejsxfvaovhdomllw`; **magic-link (email) auth**, RLS is owner-only.
-2. TMDB API key.
-3. ~~Book metadata source: OpenLibrary vs Google Books.~~ → **OpenLibrary** (no API key, no auth). German results are ranked first on a German UI instead of filtering, and books are excluded from the language-driven metadata refresh (works are not localized).
+## Decisions
+
+1. **Supabase + auth model** → project `vqpkejsxfvaovhdomllw`; **magic-link (email) auth** with owner-only RLS. Chosen over an unauthenticated setup so a leaked publishable key cannot be used to read or write anyone's data.
+2. **Metadata sources** → **TMDB** for movies/series (read access token, injected at build time via `TMDB_TOKEN`), **OpenLibrary** for books (no key, no auth). German search results are ranked first on a German UI instead of filtering, and books are excluded from the language-driven metadata refresh (works are not localized). Google Books was considered and dropped.
+3. **Deployment** → GitHub Pages via GitHub Actions on every push to `main`; the web app is the debug/test surface, Android is the eventual target.
+4. **Rules as pure functions** → page-progress deltas, series derivation, library filtering and stats aggregation live outside the widgets and are unit-tested. Business logic never sits inside a `build()`.
+5. **Reading history** → a dedicated `reading_log` table rather than deriving pages from completion dates, so "pages read per period" is exact (see Phase 5c).
+
