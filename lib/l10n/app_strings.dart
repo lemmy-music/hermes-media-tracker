@@ -72,6 +72,7 @@ class AppStrings {
   String get refresh => _t('refresh');
   String get retry => _t('retry');
   String get clear => _t('clear');
+  String get moreActions => _t('moreActions');
   String get loadingLibrary => _t('loadingLibrary');
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -109,6 +110,35 @@ class AppStrings {
   String get libraryLoadErrorTitle => _t('libraryLoadErrorTitle');
   String get libraryEmptyTitle => _t('libraryEmptyTitle');
   String get libraryEmptyMessage => _t('libraryEmptyMessage');
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // metadata refresh (language change / manual)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// Overflow-menu action: re-fetch the stored TMDB metadata.
+  String get metadataRefreshAction => _t('metadataRefreshAction');
+
+  /// Banner while a run is in flight, e.g. "Updating metadata… (2/5)".
+  String metadataRefreshing(int done, int total) =>
+      _tParam('metadataRefreshing', {'done': '$done', 'total': '$total'});
+
+  /// Snack bar after a fully successful run.
+  String metadataRefreshed(int updated, int total) =>
+      _tParam('metadataRefreshed', {
+        'updated': '$updated',
+        'total': '$total',
+      });
+
+  /// Snack bar after a run where some items kept their old metadata.
+  String metadataRefreshPartial(int updated, int total, int failed) =>
+      _tParam('metadataRefreshPartial', {
+        'updated': '$updated',
+        'total': '$total',
+        'failed': '$failed',
+      });
+
+  /// Feedback for a manual run without any TMDB entry to refresh.
+  String get metadataRefreshEmpty => _t('metadataRefreshEmpty');
 
   // ───────────────────────────────────────────────────────────────────────────
   // search
@@ -214,6 +244,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'refresh': 'Aktualisieren',
     'retry': 'Erneut versuchen',
     'clear': 'Leeren',
+    'moreActions': 'Weitere Aktionen',
     'loadingLibrary': 'Bibliothek wird geladen…',
     // kinds / statuses
     'kindMovie': 'Film',
@@ -231,6 +262,14 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'libraryEmptyTitle': 'Deine Bibliothek ist leer',
     'libraryEmptyMessage':
         'Filme, Serien und Bücher, die du verfolgst, erscheinen hier.',
+    // metadata refresh
+    'metadataRefreshAction': 'Metadaten aktualisieren',
+    'metadataRefreshing': 'Metadaten werden aktualisiert… ({done}/{total})',
+    'metadataRefreshed': '{updated} von {total} Einträgen aktualisiert',
+    'metadataRefreshPartial':
+        '{updated} von {total} aktualisiert – {failed} konnten nicht geladen '
+            'werden. Die alten Angaben bleiben sichtbar.',
+    'metadataRefreshEmpty': 'Keine TMDB-Einträge zum Aktualisieren.',
     // search
     'searchHint': 'Filme und Serien suchen',
     'searchIdleTitle': 'Finde etwas zum Verfolgen',
@@ -318,6 +357,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'refresh': 'Refresh',
     'retry': 'Retry',
     'clear': 'Clear',
+    'moreActions': 'More actions',
     'loadingLibrary': 'Loading your library…',
     // kinds / statuses
     'kindMovie': 'Movie',
@@ -335,6 +375,14 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'libraryEmptyTitle': 'Your library is empty',
     'libraryEmptyMessage':
         'Movies, series and books you track will show up here.',
+    // metadata refresh
+    'metadataRefreshAction': 'Refresh metadata',
+    'metadataRefreshing': 'Updating metadata… ({done}/{total})',
+    'metadataRefreshed': '{updated} of {total} items updated',
+    'metadataRefreshPartial':
+        '{updated} of {total} updated — {failed} could not be loaded. The '
+            'previously stored details stay visible.',
+    'metadataRefreshEmpty': 'No TMDB entries to update.',
     // search
     'searchHint': 'Search movies and series',
     'searchIdleTitle': 'Find something to track',

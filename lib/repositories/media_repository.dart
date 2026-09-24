@@ -133,6 +133,35 @@ class MediaRepository {
     }, fallback: 'Could not save the item.');
   }
 
+  /// Updates **only the metadata columns** of [item] (matched by
+  /// [MediaItem.id]) and returns the stored row.
+  ///
+  /// Used when a stored snapshot has to be refreshed in another language
+  /// (TMDB): tracking state — `status`, progress, timestamps, `kind`, the
+  /// external ids and `created_at` — is deliberately left untouched, and
+  /// `updated_at` is set by the database trigger.
+  ///
+  /// [item] may carry a full copy of the row (it usually does, built via
+  /// [MediaItem.copyWith]); only [kMetadataUpdateFields] are sent.
+  Future<MediaItem> updateMetadata(MediaItem item) {
+    final id = item.id;
+    if (id == null) {
+      throw const MediaRepositoryException(
+        'Cannot update metadata of an item that has no id yet.',
+      );
+    }
+    _requireUserId();
+    return _guard(() async {
+      final row = await client
+          .from('media_items')
+          .update(metadataUpdatePayload(item))
+          .eq('id', id)
+          .select()
+          .single();
+      return MediaItem.fromMap(row);
+    }, fallback: 'Could not refresh the metadata.');
+  }
+
   /// Deletes an item (its episodes cascade in Postgres).
   Future<void> delete(String id) {
     _requireUserId();
@@ -235,6 +264,37 @@ class MediaRepository {
       throw MediaRepositoryException(fallback, cause: error);
     }
   }
+}
+
+/// The **only** columns a metadata refresh may touch.
+///
+/// Everything else on `media_items` (tracking state, ownership, kind, the
+/// external ids, timestamps) belongs to the user or the server.
+const Set<String> kMetadataUpdateFields = <String>{
+  'title',
+  'original_title',
+  'release_year',
+  'overview',
+  'poster_url',
+  'total_seasons',
+  'total_episodes',
+};
+
+/// Builds the PostgREST payload for [MediaRepository.updateMetadata].
+///
+/// Nullable columns are sent as `null` on purpose: a language in which TMDB
+/// has no overview (or poster) must be able to clear a stale one. The set of
+/// keys is exactly [kMetadataUpdateFields] — see the guard test.
+Map<String, dynamic> metadataUpdatePayload(MediaItem item) {
+  return <String, dynamic>{
+    'title': item.title,
+    'original_title': item.originalTitle,
+    'release_year': item.releaseYear,
+    'overview': item.overview,
+    'poster_url': item.posterUrl,
+    'total_seasons': item.totalSeasons,
+    'total_episodes': item.totalEpisodes,
+  };
 }
 
 /// Maps a [PostgrestException] to a user-facing message.

@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/app_config.dart';
 import 'providers/auth_provider.dart';
+import 'providers/library_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/theme_provider.dart';
 import 'repositories/media_repository.dart';
@@ -70,6 +71,15 @@ class MediaTrackerApp extends StatelessWidget {
           create: (_) => repository ?? MediaRepository(),
         ),
         Provider<TmdbClient>(create: (_) => tmdbClient ?? TmdbClient()),
+        // Owns the library list and re-loads stored metadata whenever the
+        // language changes (see LibraryProvider).
+        ChangeNotifierProvider<LibraryProvider>(
+          create: (context) => LibraryProvider(
+            repository: context.read<MediaRepository>(),
+            tmdbClient: context.read<TmdbClient>(),
+            settings: settingsProvider,
+          ),
+        ),
       ],
       child: Consumer<ThemeProvider>(
         builder: (_, theme, _) => MaterialApp(

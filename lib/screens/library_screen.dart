@@ -3,15 +3,17 @@ import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/media_item.dart';
-import '../repositories/media_repository.dart';
+import '../providers/library_provider.dart';
+import '../providers/settings_provider.dart';
 import '../widgets/media_widgets.dart';
 import '../widgets/settings_button.dart';
 
 /// Library tab — lists everything the signed-in user tracks.
 ///
 /// Detail and tracking UI arrive in Phase 3; this is a read-only list with
-/// loading / empty / error states and manual refresh.
-class LibraryScreen extends StatefulWidget {
+/// loading / empty / error states, manual refresh and the metadata refresh
+/// entry point (the automatic one runs while the language changes).
+class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
 
   /// Above this width the posters grow a little (tablet / desktop web).
@@ -23,53 +25,14 @@ class LibraryScreen extends StatefulWidget {
   /// Poster width on wide screens.
   static const double posterWide = 112;
 
-  @override
-  State<LibraryScreen> createState() => _LibraryScreenState();
-}
-
-class _LibraryScreenState extends State<LibraryScreen> {
-  late final MediaRepository _repository;
-
-  List<MediaItem> _items = const <MediaItem>[];
-  bool _loading = true;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _repository = context.read<MediaRepository>();
-    _load();
-  }
-
-  Future<void> _load() async {
-    // On the first call (from initState) we are already in the initial loading
-    // state, so there is nothing to setState for.
-    if (!_loading || _error != null) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-    }
-
-    try {
-      final items = await _repository.fetchAll();
-      if (!mounted) return;
-      setState(() {
-        _items = items;
-        _loading = false;
-      });
-    } on MediaRepositoryException catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _error = error.message;
-        _loading = false;
-      });
-    }
-  }
+  /// Actions offered by the overflow menu in the AppBar.
+  static const String refreshMetadataAction = 'refresh-metadata';
 
   @override
   Widget build(BuildContext context) {
     final strings = context.strings;
+    final library = context.watch<LibraryProvider>();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(strings.library),
@@ -77,35 +40,91 @@ class _LibraryScreenState extends State<LibraryScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: strings.refresh,
-            onPressed: _loading ? null : _load,
+            onPressed: library.loading ? null : library.load,
+          ),
+          PopupMenuButton<String>(
+            tooltip: strings.moreActions,
+            onSelected: (action) {
+              if (action == refreshMetadataAction) {
+                _refreshMetadata(context, library);
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem<String>(
+                value: refreshMetadataAction,
+                enabled: !library.refreshingMetadata,
+                child: Row(
+                  children: [
+                    const Icon(Icons.sync),
+                    const SizedBox(width: 12),
+                    Flexible(child: Text(strings.metadataRefreshAction)),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SettingsButton(),
         ],
       ),
-      body: RefreshIndicator(onRefresh: _load, child: _buildBody(context)),
+      body: Column(
+        children: [
+          if (library.refreshingMetadata)
+            _MetadataRefreshBanner(
+              done: library.metadataRefreshDone,
+              total: library.metadataRefreshTotal,
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: library.load,
+              child: _buildBody(context, library),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildBody(BuildContext context) {
-    final strings = context.strings;
+  /// Manual refresh with the currently selected language.
+  Future<void> _refreshMetadata(
+    BuildContext context,
+    LibraryProvider library,
+  ) async {
+    final strings = AppStrings.read(context);
+    final language = context.read<SettingsProvider>().language;
+    final messenger = ScaffoldMessenger.of(context);
 
-    if (_loading && _items.isEmpty) {
+    final result = await library.refreshMetadata(language: language);
+    // The completed run with candidates is reported centrally (it may have
+    // been started from the settings sheet, i.e. not from this screen); only
+    // the "nothing to do" case needs feedback here.
+    if (!result.hadCandidates) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(strings.metadataRefreshEmpty)),
+      );
+    }
+  }
+
+  Widget _buildBody(BuildContext context, LibraryProvider library) {
+    final strings = context.strings;
+    final items = library.items;
+
+    if (library.loading && items.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
-    final error = _error;
-    if (error != null) {
+    final error = library.error;
+    if (error != null && items.isEmpty) {
       return CenteredMessage(
         icon: Icons.cloud_off,
         title: strings.libraryLoadErrorTitle,
         message: error,
         action: FilledButton.icon(
-          onPressed: _load,
+          onPressed: library.load,
           icon: const Icon(Icons.refresh),
           label: Text(strings.retry),
         ),
       );
     }
-    if (_items.isEmpty) {
+    if (items.isEmpty) {
       return CenteredMessage(
         icon: Icons.video_library_outlined,
         title: strings.libraryEmptyTitle,
@@ -120,13 +139,60 @@ class _LibraryScreenState extends State<LibraryScreen> {
         return ListView.separated(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.symmetric(vertical: 8),
-          itemCount: _items.length,
+          itemCount: items.length,
           separatorBuilder: (_, _) =>
               Divider(height: 1, indent: 16 + posterWidth + 14),
           itemBuilder: (context, index) =>
-              _MediaTile(item: _items[index], posterWidth: posterWidth),
+              _MediaTile(item: items[index], posterWidth: posterWidth),
         );
       },
+    );
+  }
+}
+
+/// Slim, unobtrusive progress bar shown while metadata is re-fetched.
+class _MetadataRefreshBanner extends StatelessWidget {
+  const _MetadataRefreshBanner({required this.done, required this.total});
+
+  final int done;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final strings = context.strings;
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LinearProgressIndicator(
+            value: total == 0 ? null : done / total,
+            minHeight: 3,
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.sync,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    strings.metadataRefreshing(done, total),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

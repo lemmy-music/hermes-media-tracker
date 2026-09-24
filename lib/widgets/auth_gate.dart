@@ -3,10 +3,12 @@ import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../providers/auth_provider.dart';
+import '../providers/library_provider.dart';
 import '../screens/login_screen.dart';
 import '../screens/library_screen.dart';
 import '../screens/search_screen.dart';
 import '../screens/stats_screen.dart';
+import 'metadata_refresh_reporter.dart';
 
 /// Decides what the user sees based on the current [AuthProvider] state.
 ///
@@ -80,31 +82,46 @@ class _MainNavigationState extends State<MainNavigation> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    // `LibraryScreen` is stateless and the provider starts in the loading
+    // state, so the initial load has to be kicked off here — exactly once,
+    // when the shell mounts (i.e. right after sign-in). Deferred to after the
+    // first frame so it never notifies during build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<LibraryProvider>().load();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final strings = context.strings;
-    return Scaffold(
-      body: _screens[_selectedIndex],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (index) =>
-            setState(() => _selectedIndex = index),
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.video_library_outlined),
-            selectedIcon: const Icon(Icons.video_library),
-            label: strings.library,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.search),
-            selectedIcon: const Icon(Icons.search),
-            label: strings.search,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.insights_outlined),
-            selectedIcon: const Icon(Icons.insights),
-            label: strings.stats,
-          ),
-        ],
+    return MetadataRefreshReporter(
+      child: Scaffold(
+        body: _screens[_selectedIndex],
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _selectedIndex,
+          onDestinationSelected: (index) =>
+              setState(() => _selectedIndex = index),
+          destinations: [
+            NavigationDestination(
+              icon: const Icon(Icons.video_library_outlined),
+              selectedIcon: const Icon(Icons.video_library),
+              label: strings.library,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.search),
+              selectedIcon: const Icon(Icons.search),
+              label: strings.search,
+            ),
+            NavigationDestination(
+              icon: const Icon(Icons.insights_outlined),
+              selectedIcon: const Icon(Icons.insights),
+              label: strings.stats,
+            ),
+          ],
+        ),
       ),
     );
   }
