@@ -37,12 +37,14 @@ class TmdbException implements Exception {
 
 /// The kind of search to run — one entry per (future) metadata source tab.
 ///
-/// Adding `books` later only requires a new enum value plus a branch in
-/// [TmdbClient.search]; the UI already renders the filter generically.
+/// The UI renders the filter chips generically from these values. `books` is
+/// **not** served by TMDB: the search screen routes it to the OpenLibrary
+/// client, which is why [TmdbClient.search] never receives it.
 enum TmdbSearchScope {
   all('All'),
   movie('Movies'),
-  tv('Series');
+  tv('Series'),
+  books('Books');
 
   const TmdbSearchScope(this.label);
 
@@ -61,9 +63,8 @@ class TmdbClient {
     http.Client? httpClient,
     String? token,
     this.language = defaultLanguage,
-  })
-    : _http = httpClient ?? http.Client(),
-      _token = token ?? AppConfig.tmdbToken;
+  }) : _http = httpClient ?? http.Client(),
+       _token = token ?? AppConfig.tmdbToken;
 
   static const String _base = AppConfig.tmdbApiBase;
   static const Duration _timeout = Duration(seconds: 15);
@@ -104,8 +105,12 @@ class TmdbClient {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return const <TmdbSearchResult>[];
 
+    // Books come from OpenLibrary — the screen never calls TMDB for them.
+    // Guarding here keeps the client total (and the switch below exhaustive).
+    if (scope == TmdbSearchScope.books) return const <TmdbSearchResult>[];
+
     final path = switch (scope) {
-      TmdbSearchScope.all => '/search/multi',
+      TmdbSearchScope.all || TmdbSearchScope.books => '/search/multi',
       TmdbSearchScope.movie => '/search/movie',
       TmdbSearchScope.tv => '/search/tv',
     };
@@ -115,7 +120,7 @@ class TmdbClient {
     final fallback = switch (scope) {
       TmdbSearchScope.movie => 'movie',
       TmdbSearchScope.tv => 'tv',
-      TmdbSearchScope.all => null,
+      TmdbSearchScope.all || TmdbSearchScope.books => null,
     };
 
     final json = await _get(
@@ -195,10 +200,7 @@ class TmdbClient {
     }
 
     final uri = Uri.parse('$_base$path').replace(
-      queryParameters: <String, String>{
-        'language': requestLanguage,
-        ...?query,
-      },
+      queryParameters: <String, String>{'language': requestLanguage, ...?query},
     );
 
     http.Response response;
@@ -213,10 +215,7 @@ class TmdbClient {
           )
           .timeout(_timeout);
     } on TimeoutException catch (error) {
-      throw TmdbException(
-        strings.tmdbTimeout,
-        cause: error,
-      );
+      throw TmdbException(strings.tmdbTimeout, cause: error);
     } on http.ClientException catch (error) {
       throw TmdbException(strings.tmdbUnreachable, cause: error);
     } catch (error) {

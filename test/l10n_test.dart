@@ -32,6 +32,7 @@ void main() {
       expect(de.scopeLabel(TmdbSearchScope.all), 'Alle');
       expect(de.scopeLabel(TmdbSearchScope.movie), 'Filme');
       expect(de.scopeLabel(TmdbSearchScope.tv), 'Serien');
+      expect(de.scopeLabel(TmdbSearchScope.books), 'Bücher');
     });
   });
 
@@ -50,6 +51,13 @@ void main() {
       expect(en.seasons(3), '3 seasons');
       expect(en.episodes(1), '1 episode');
       expect(en.episodes(2), '2 episodes');
+      expect(en.pages(1), '1 page');
+      expect(en.pages(2), '2 pages');
+    });
+
+    test('localizes the book scope and author line', () {
+      expect(en.scopeLabel(TmdbSearchScope.books), 'Books');
+      expect(en.byAuthors('J.R.R. Tolkien'), 'by J.R.R. Tolkien');
     });
   });
 
@@ -59,6 +67,35 @@ void main() {
     expect(de.seasons(3), '3 Staffeln');
     expect(de.episodes(1), '1 Folge');
     expect(de.episodes(5), '5 Folgen');
+    expect(de.pages(1), '1 Seite');
+    expect(de.pages(5), '5 Seiten');
+  });
+
+  test('book strings are available in both languages', () {
+    const de = AppStrings(AppLanguage.de);
+    const en = AppStrings(AppLanguage.en);
+
+    expect(de.bookNoDescription, isNot('bookNoDescription'));
+    expect(en.bookNoDescription, 'No description available.');
+    expect(de.byAuthors('Tolkien'), 'von Tolkien');
+
+    // The OpenLibrary service messages must not fall back to the raw key.
+    for (final message in <String>[
+      de.openLibraryTimeout,
+      de.openLibraryUnreachable,
+      de.openLibraryNotFound,
+      de.openLibraryRequestFailed,
+      de.openLibraryUnexpectedResponse,
+      de.openLibraryUnreadableResponse,
+      en.openLibraryTimeout,
+      en.openLibraryUnreachable,
+      en.openLibraryNotFound,
+      en.openLibraryRequestFailed,
+      en.openLibraryUnexpectedResponse,
+      en.openLibraryUnreadableResponse,
+    ]) {
+      expect(message, contains('OpenLibrary'));
+    }
   });
 
   test('parameterized strings inject the value', () {

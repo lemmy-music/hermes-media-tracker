@@ -195,7 +195,7 @@ Future<void> _recoverSession(SupabaseClient client) {
       'expires_in': 3600,
       'expires_at':
           DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch ~/
-              1000,
+          1000,
       'user': <String, dynamic>{
         'id': 'user-1',
         'aud': 'authenticated',
@@ -259,18 +259,15 @@ void main() {
       expect(requests, hasLength(1));
       final body = _requestBody(requests.single);
       expect(body.keys.toSet(), kMetadataUpdateFields);
-      expect(
-        kMetadataUpdateFields,
-        <String>{
-          'title',
-          'original_title',
-          'release_year',
-          'overview',
-          'poster_url',
-          'total_seasons',
-          'total_episodes',
-        },
-      );
+      expect(kMetadataUpdateFields, <String>{
+        'title',
+        'original_title',
+        'release_year',
+        'overview',
+        'poster_url',
+        'total_seasons',
+        'total_episodes',
+      });
 
       for (final forbidden in const <String>[
         'id',
@@ -311,6 +308,15 @@ void main() {
           _tmdbMovie('a', tmdbId: 1, title: 'Inception'),
           _tmdbMovie('b', tmdbId: 2, title: 'Arrival'),
           const MediaItem(id: 'c', kind: MediaKind.book, title: 'Dune'),
+          // An OpenLibrary book must not become a refresh candidate either:
+          // OpenLibrary has no localized work metadata.
+          const MediaItem(
+            id: 'd',
+            kind: MediaKind.book,
+            title: 'Der Herr der Ringe',
+            externalSource: 'openlibrary',
+            externalId: '/works/OL27448W',
+          ),
         ],
       );
       final tmdb = _FakeTmdb();
@@ -321,9 +327,7 @@ void main() {
       );
       await provider.load();
 
-      final result = await provider.refreshMetadata(
-        language: AppLanguage.de,
-      );
+      final result = await provider.refreshMetadata(language: AppLanguage.de);
 
       expect(result.total, 2);
       expect(result.updated, 2);
@@ -333,67 +337,68 @@ void main() {
       expect(tmdb.requestedIds..sort(), <int>[1, 2]);
       expect(tmdb.languages, everyElement('de-DE'));
       expect(repository.updatedIds..sort(), <String>['a', 'b']);
-      // The book is never sent to TMDB.
+      // Neither book is ever sent to TMDB, and neither inflates the count.
       expect(tmdb.requestedIds, isNot(contains(3)));
+      expect(repository.updatedIds, isNot(contains('d')));
     });
 
-    test('a failing request does not stop the others and counts as failed',
-        () async {
-      final repository = _FakeRepository(
-        items: [
-          _tmdbMovie('a', tmdbId: 1, title: 'Inception'),
-          _tmdbMovie('b', tmdbId: 2, title: 'Arrival'),
-          _tmdbMovie('c', tmdbId: 3, title: 'Dune'),
-        ],
-      );
-      final tmdb = _FakeTmdb(failingIds: {2});
-      final provider = _provider(
-        repository: repository,
-        tmdbClient: tmdb,
-        maxConcurrency: 2,
-      );
-      await provider.load();
+    test(
+      'a failing request does not stop the others and counts as failed',
+      () async {
+        final repository = _FakeRepository(
+          items: [
+            _tmdbMovie('a', tmdbId: 1, title: 'Inception'),
+            _tmdbMovie('b', tmdbId: 2, title: 'Arrival'),
+            _tmdbMovie('c', tmdbId: 3, title: 'Dune'),
+          ],
+        );
+        final tmdb = _FakeTmdb(failingIds: {2});
+        final provider = _provider(
+          repository: repository,
+          tmdbClient: tmdb,
+          maxConcurrency: 2,
+        );
+        await provider.load();
 
-      final result = await provider.refreshMetadata(
-        language: AppLanguage.de,
-      );
+        final result = await provider.refreshMetadata(language: AppLanguage.de);
 
-      expect(result.total, 3);
-      expect(result.updated, 2);
-      expect(result.failed, 1);
-      expect(result.hadFailures, isTrue);
-      // Every candidate was attempted…
-      expect(tmdb.requestedIds..sort(), <int>[1, 2, 3]);
-      // …but only the two successful ones were written.
-      expect(repository.updatedIds..sort(), <String>['a', 'c']);
-      expect(repository.updatedIds, isNot(contains('b')));
-      // The failed item keeps its stored snapshot.
-      final kept = provider.items.firstWhere((item) => item.id == 'b');
-      expect(kept.title, 'Arrival');
-    });
+        expect(result.total, 3);
+        expect(result.updated, 2);
+        expect(result.failed, 1);
+        expect(result.hadFailures, isTrue);
+        // Every candidate was attempted…
+        expect(tmdb.requestedIds..sort(), <int>[1, 2, 3]);
+        // …but only the two successful ones were written.
+        expect(repository.updatedIds..sort(), <String>['a', 'c']);
+        expect(repository.updatedIds, isNot(contains('b')));
+        // The failed item keeps its stored snapshot.
+        final kept = provider.items.firstWhere((item) => item.id == 'b');
+        expect(kept.title, 'Arrival');
+      },
+    );
 
-    test('a failing write keeps the old metadata and counts as failed',
-        () async {
-      final repository = _FakeRepository(
-        items: [_tmdbMovie('a', tmdbId: 1, title: 'Inception')],
-        failingUpdateIds: {'a'},
-      );
-      final provider = _provider(
-        repository: repository,
-        tmdbClient: _FakeTmdb(),
-        maxConcurrency: 1,
-      );
-      await provider.load();
+    test(
+      'a failing write keeps the old metadata and counts as failed',
+      () async {
+        final repository = _FakeRepository(
+          items: [_tmdbMovie('a', tmdbId: 1, title: 'Inception')],
+          failingUpdateIds: {'a'},
+        );
+        final provider = _provider(
+          repository: repository,
+          tmdbClient: _FakeTmdb(),
+          maxConcurrency: 1,
+        );
+        await provider.load();
 
-      final result = await provider.refreshMetadata(
-        language: AppLanguage.de,
-      );
+        final result = await provider.refreshMetadata(language: AppLanguage.de);
 
-      expect(result.total, 1);
-      expect(result.updated, 0);
-      expect(result.failed, 1);
-      expect(repository.updatedIds, isEmpty);
-    });
+        expect(result.total, 1);
+        expect(result.updated, 0);
+        expect(result.failed, 1);
+        expect(repository.updatedIds, isEmpty);
+      },
+    );
 
     test('an empty library reports nothing to refresh', () async {
       final provider = _provider(
@@ -402,9 +407,7 @@ void main() {
       );
       await provider.load();
 
-      final result = await provider.refreshMetadata(
-        language: AppLanguage.de,
-      );
+      final result = await provider.refreshMetadata(language: AppLanguage.de);
 
       expect(result, isNotNull);
       expect(result.hadCandidates, isFalse);
@@ -458,8 +461,9 @@ void main() {
   });
 
   group('language change UI', () {
-    testWidgets('a language switch refreshes the library and reports it once',
-        (tester) async {
+    testWidgets('a language switch refreshes the library and reports it once', (
+      tester,
+    ) async {
       final repository = _FakeRepository(
         items: [
           _tmdbMovie('a', tmdbId: 1, title: 'Inception'),

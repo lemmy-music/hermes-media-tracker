@@ -176,7 +176,9 @@ class LibraryProvider extends ChangeNotifier {
     return _activeRefresh!;
   }
 
-  Future<MetadataRefreshResult> _runMetadataRefresh(AppLanguage language) async {
+  Future<MetadataRefreshResult> _runMetadataRefresh(
+    AppLanguage language,
+  ) async {
     final targets = _items.where(_isTmdbItem).toList(growable: false);
     if (targets.isEmpty) {
       _lastMetadataRefresh = MetadataRefreshResult.empty;
@@ -252,9 +254,7 @@ class LibraryProvider extends ChangeNotifier {
           releaseYear: details.year,
           overview: _nonEmpty(details.overview),
           posterUrl: details.posterUrl,
-          totalSeasons: isSeries
-              ? details.numberOfSeasons
-              : item.totalSeasons,
+          totalSeasons: isSeries ? details.numberOfSeasons : item.totalSeasons,
           totalEpisodes: isSeries
               ? details.numberOfEpisodes
               : item.totalEpisodes,
@@ -267,6 +267,13 @@ class LibraryProvider extends ChangeNotifier {
     }
   }
 
+  /// A refresh candidate is always a TMDB item.
+  ///
+  /// Books (`external_source == 'openlibrary'`) are deliberately **excluded**:
+  /// OpenLibrary is not a localized metadata API — a work's title does not
+  /// vary by language (only its editions do, and the stored snapshot already
+  /// holds the fields we show). Re-fetching would add requests without
+  /// improving anything, and books must not inflate `total`/`failed`.
   bool _isTmdbItem(MediaItem item) =>
       item.externalSource == tmdbSource &&
       item.externalId != null &&

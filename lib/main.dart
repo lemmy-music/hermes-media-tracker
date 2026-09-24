@@ -10,6 +10,7 @@ import 'providers/library_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/theme_provider.dart';
 import 'repositories/media_repository.dart';
+import 'services/openlibrary_client.dart';
 import 'services/tmdb_client.dart';
 import 'widgets/auth_gate.dart';
 
@@ -48,6 +49,7 @@ class MediaTrackerApp extends StatelessWidget {
     required this.authProvider,
     this.repository,
     this.tmdbClient,
+    this.openLibraryClient,
   });
 
   final ThemeProvider themeProvider;
@@ -60,6 +62,9 @@ class MediaTrackerApp extends StatelessWidget {
   /// Overridable so widget tests can supply a stub metadata client.
   final TmdbClient? tmdbClient;
 
+  /// Overridable so widget tests can supply a stub book client (no network).
+  final OpenLibraryClient? openLibraryClient;
+
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -71,6 +76,9 @@ class MediaTrackerApp extends StatelessWidget {
           create: (_) => repository ?? MediaRepository(),
         ),
         Provider<TmdbClient>(create: (_) => tmdbClient ?? TmdbClient()),
+        Provider<OpenLibraryClient>(
+          create: (_) => openLibraryClient ?? OpenLibraryClient(),
+        ),
         // Owns the library list and re-loads stored metadata whenever the
         // language changes (see LibraryProvider).
         ChangeNotifierProvider<LibraryProvider>(

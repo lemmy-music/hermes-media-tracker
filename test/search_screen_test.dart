@@ -5,12 +5,14 @@ import 'package:http/testing.dart';
 
 import 'package:media_tracker/l10n/app_language.dart';
 import 'package:media_tracker/main.dart';
+import 'package:media_tracker/models/book_result.dart';
 import 'package:media_tracker/models/media_item.dart';
 import 'package:media_tracker/models/tmdb_result.dart';
 import 'package:media_tracker/providers/auth_provider.dart';
 import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/providers/theme_provider.dart';
 import 'package:media_tracker/repositories/media_repository.dart';
+import 'package:media_tracker/services/openlibrary_client.dart';
 import 'package:media_tracker/services/tmdb_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -38,6 +40,9 @@ class _FakeRepository extends MediaRepository {
 
   int insertCount = 0;
 
+  /// The item handed to the most recent [insert] call.
+  MediaItem? lastInserted;
+
   /// When set, [insert] throws a [MediaRepositoryException] with this text.
   String? insertError;
 
@@ -50,6 +55,7 @@ class _FakeRepository extends MediaRepository {
   @override
   Future<MediaItem> insert(MediaItem item) async {
     insertCount++;
+    lastInserted = item;
     final error = insertError;
     if (error != null) throw MediaRepositoryException(error);
     return item.copyWith(id: 'new-id');
@@ -118,11 +124,70 @@ const TmdbSearchResult _hit = TmdbSearchResult(
   overview: 'A thief who steals corporate secrets.',
 );
 
+/// Book client stub — no network. Records the requested languages so the
+/// German ranking parameter can be asserted.
+class _FakeOpenLibrary extends OpenLibraryClient {
+  _FakeOpenLibrary({
+    this.results = const <BookResult>[],
+    this.searchError,
+    this.details,
+  }) : super(httpClient: MockClient((_) async => http.Response('{}', 200)));
+
+  final List<BookResult> results;
+  final String? searchError;
+  final BookDetails? details;
+
+  final List<String> queries = [];
+  final List<AppLanguage?> languages = [];
+
+  @override
+  Future<List<BookResult>> search(
+    String query, {
+    int limit = OpenLibraryClient.defaultLimit,
+    AppLanguage? language,
+  }) async {
+    queries.add(query);
+    languages.add(language);
+    final error = searchError;
+    if (error != null) throw OpenLibraryException(error);
+    return results;
+  }
+
+  @override
+  Future<BookDetails> fetchDetails(
+    String workKey, {
+    AppLanguage? language,
+  }) async {
+    return details ?? BookDetails(key: workKey, title: results.first.title);
+  }
+}
+
+const BookResult _bookHit = BookResult(
+  key: '/works/OL27448W',
+  title: 'The Lord of the Rings',
+  authors: ['J.R.R. Tolkien'],
+  firstPublishYear: 1954,
+  coverId: 8231856,
+  pageCount: 1216,
+  isbns: ['9780618640157'],
+);
+
+const BookDetails _bookDetails = BookDetails(
+  key: '/works/OL27448W',
+  title: 'The Lord of the Rings',
+  description: 'A quest to destroy a ring.',
+  firstPublishYear: 1954,
+  coverId: 8231856,
+  pageCount: 1216,
+  isbns: ['9780618640157'],
+);
+
 Future<void> _pumpSearch(
   WidgetTester tester, {
   required TmdbClient tmdb,
   MediaRepository? repository,
   SettingsProvider? settings,
+  OpenLibraryClient? books,
 }) async {
   await tester.pumpWidget(
     MediaTrackerApp(
@@ -133,6 +198,7 @@ Future<void> _pumpSearch(
       authProvider: _FakeAuth(),
       repository: repository ?? _FakeRepository(),
       tmdbClient: tmdb,
+      openLibraryClient: books ?? _FakeOpenLibrary(),
     ),
   );
   await tester.pump();
@@ -150,7 +216,10 @@ void main() {
     await _pumpSearch(tester, tmdb: _FakeTmdb());
 
     expect(find.text('Find something to track'), findsOneWidget);
-    expect(find.text('Search for movies and series by title.'), findsOneWidget);
+    expect(
+      find.text('Search for movies, series and books by title.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('results appear after the debounce', (tester) async {
@@ -273,7 +342,7 @@ void main() {
     await _pumpSearch(tester, tmdb: tmdb, settings: SettingsProvider());
 
     expect(find.text('Finde etwas zum Verfolgen'), findsOneWidget);
-    expect(find.text('Filme und Serien suchen'), findsOneWidget);
+    expect(find.text('Filme, Serien und Bücher suchen'), findsOneWidget);
     expect(find.text('Alle'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), 'incep');
@@ -311,8 +380,9 @@ void main() {
     expect(find.text('148 Min.'), findsOneWidget);
   });
 
-  testWidgets('switching language re-queries TMDB with the new code',
-      (tester) async {
+  testWidgets('switching language re-queries TMDB with the new code', (
+    tester,
+  ) async {
     final tmdb = _FakeTmdb(results: const [_hit]);
     final settings = SettingsProvider(initial: AppLanguage.en);
     await _pumpSearch(tester, tmdb: tmdb, settings: settings);
@@ -332,5 +402,187 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tmdb.languages, ['en-US', 'de-DE']);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // books (OpenLibrary)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  testWidgets('the Books scope lists OpenLibrary hits with a Book badge', (
+    tester,
+  ) async {
+    final books = _FakeOpenLibrary(results: const [_bookHit]);
+    await _pumpSearch(
+      tester,
+      tmdb: _FakeTmdb(results: const [_hit]),
+      books: books,
+    );
+
+    // Switch to the Books scope before searching.
+    await tester.tap(find.text('Books'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'herr der ringe');
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(books.queries, ['herr der ringe']);
+    expect(find.text('The Lord of the Rings'), findsOneWidget);
+    expect(find.text('Book'), findsOneWidget);
+    expect(find.text('1954'), findsOneWidget);
+    // The author teaser is shown for books.
+    expect(find.text('by J.R.R. Tolkien'), findsOneWidget);
+  });
+
+  testWidgets('the Books scope never queries TMDB', (tester) async {
+    final tmdb = _FakeTmdb(results: const [_hit]);
+    final books = _FakeOpenLibrary(results: const [_bookHit]);
+    await _pumpSearch(tester, tmdb: tmdb, books: books);
+
+    await tester.tap(find.text('Books'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'lotr');
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(tmdb.queries, isEmpty);
+    expect(books.queries, ['lotr']);
+  });
+
+  testWidgets('the All scope merges TMDB and book hits', (tester) async {
+    final books = _FakeOpenLibrary(results: const [_bookHit]);
+    await _pumpSearch(
+      tester,
+      tmdb: _FakeTmdb(results: const [_hit]),
+      books: books,
+    );
+
+    await tester.enterText(find.byType(TextField), 'ring');
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(books.queries, ['ring']);
+    expect(find.text('Inception'), findsOneWidget);
+    expect(find.text('The Lord of the Rings'), findsOneWidget);
+  });
+
+  testWidgets('German scope labels are localized', (tester) async {
+    await _pumpSearch(tester, tmdb: _FakeTmdb(), settings: SettingsProvider());
+
+    expect(find.text('Alle'), findsOneWidget);
+    expect(find.text('Bücher'), findsOneWidget);
+  });
+
+  testWidgets('German UI asks OpenLibrary for German ranking', (tester) async {
+    final books = _FakeOpenLibrary(results: const [_bookHit]);
+    await _pumpSearch(
+      tester,
+      tmdb: _FakeTmdb(),
+      books: books,
+      settings: SettingsProvider(),
+    );
+
+    await tester.enterText(find.byType(TextField), 'herr');
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(books.languages, [AppLanguage.de]);
+  });
+
+  testWidgets('the book detail sheet adds the work to the library', (
+    tester,
+  ) async {
+    final repository = _FakeRepository();
+    final books = _FakeOpenLibrary(
+      results: const [_bookHit],
+      details: _bookDetails,
+    );
+    await _pumpSearch(
+      tester,
+      tmdb: _FakeTmdb(),
+      books: books,
+      repository: repository,
+    );
+
+    await tester.tap(find.text('Books'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'lotr');
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('The Lord of the Rings'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('A quest to destroy a ring.'), findsOneWidget);
+    expect(find.text('1216 pages'), findsOneWidget);
+    expect(find.text('Add to library'), findsOneWidget);
+
+    await tester.tap(find.text('Add to library'));
+    await tester.pumpAndSettle();
+
+    expect(repository.insertCount, 1);
+    final item = repository.lastInserted!;
+    expect(item.kind, MediaKind.book);
+    expect(item.externalSource, 'openlibrary');
+    expect(item.externalId, '/works/OL27448W');
+    expect(item.authors, ['J.R.R. Tolkien']);
+    expect(item.totalPages, 1216);
+    expect(item.isbn, '9780618640157');
+    expect(item.status, MediaStatus.planned);
+    expect(find.text('Already in your library'), findsOneWidget);
+  });
+
+  testWidgets('an already tracked book shows as already in the library', (
+    tester,
+  ) async {
+    final repository = _FakeRepository(
+      existing: const MediaItem(
+        id: 'existing',
+        kind: MediaKind.book,
+        title: 'The Lord of the Rings',
+        externalSource: 'openlibrary',
+        externalId: '/works/OL27448W',
+      ),
+    );
+    await _pumpSearch(
+      tester,
+      tmdb: _FakeTmdb(),
+      books: _FakeOpenLibrary(results: const [_bookHit], details: _bookDetails),
+      repository: repository,
+    );
+
+    await tester.tap(find.text('Books'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'lotr');
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('The Lord of the Rings'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Already in your library'), findsOneWidget);
+    expect(find.text('Add to library'), findsNothing);
+  });
+
+  testWidgets('a failing book search surfaces the OpenLibrary message', (
+    tester,
+  ) async {
+    final books = _FakeOpenLibrary(
+      searchError: 'Could not reach OpenLibrary. Check your connection.',
+    );
+    await _pumpSearch(tester, tmdb: _FakeTmdb(), books: books);
+
+    await tester.tap(find.text('Books'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'lotr');
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Search failed'), findsOneWidget);
+    expect(
+      find.text('Could not reach OpenLibrary. Check your connection.'),
+      findsOneWidget,
+    );
+    expect(find.text('Retry'), findsOneWidget);
   });
 }

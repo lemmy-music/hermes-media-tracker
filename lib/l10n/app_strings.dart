@@ -45,8 +45,7 @@ class AppStrings {
       AppStrings(AppLanguage.fromTmdbCode(tmdbLanguage));
 
   String _t(String key) {
-    final value =
-        _kStrings[language]?[key] ?? _kStrings[AppLanguage.en]?[key];
+    final value = _kStrings[language]?[key] ?? _kStrings[AppLanguage.en]?[key];
     return value ?? key;
   }
 
@@ -101,6 +100,7 @@ class AppStrings {
     TmdbSearchScope.all => _t('scopeAll'),
     TmdbSearchScope.movie => _t('scopeMovies'),
     TmdbSearchScope.tv => _t('scopeSeries'),
+    TmdbSearchScope.books => _t('scopeBooks'),
   };
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -124,18 +124,13 @@ class AppStrings {
 
   /// Snack bar after a fully successful run.
   String metadataRefreshed(int updated, int total) =>
-      _tParam('metadataRefreshed', {
-        'updated': '$updated',
-        'total': '$total',
-      });
+      _tParam('metadataRefreshed', {'updated': '$updated', 'total': '$total'});
 
   /// Snack bar after a run where some items kept their old metadata.
-  String metadataRefreshPartial(int updated, int total, int failed) =>
-      _tParam('metadataRefreshPartial', {
-        'updated': '$updated',
-        'total': '$total',
-        'failed': '$failed',
-      });
+  String metadataRefreshPartial(int updated, int total, int failed) => _tParam(
+    'metadataRefreshPartial',
+    {'updated': '$updated', 'total': '$total', 'failed': '$failed'},
+  );
 
   /// Feedback for a manual run without any TMDB entry to refresh.
   String get metadataRefreshEmpty => _t('metadataRefreshEmpty');
@@ -154,6 +149,13 @@ class AppStrings {
   String get addToLibrary => _t('addToLibrary');
   String get alreadyInLibrary => _t('alreadyInLibrary');
   String get addedToLibrary => _t('addedToLibrary');
+
+  /// Teaser shown for a book hit without a description.
+  String get bookNoDescription => _t('bookNoDescription');
+
+  /// Author line for a book hit / detail sheet, e.g. "by J.R.R. Tolkien".
+  String byAuthors(String authors) =>
+      _tParam('byAuthors', {'authors': authors});
 
   // ───────────────────────────────────────────────────────────────────────────
   // stats
@@ -179,8 +181,7 @@ class AppStrings {
   String get useDifferentEmail => _t('useDifferentEmail');
 
   /// "We sent a sign-in link to the given address…".
-  String sentLinkTo(String email) =>
-      _tParam('loginSentTo', {'email': email});
+  String sentLinkTo(String email) => _tParam('loginSentTo', {'email': email});
 
   // ───────────────────────────────────────────────────────────────────────────
   // settings sheet
@@ -207,6 +208,10 @@ class AppStrings {
   String episodes(int count) =>
       _tParam(count == 1 ? 'episodeOne' : 'episodeMany', {'count': '$count'});
 
+  /// Page count of a book — singular / plural.
+  String pages(int count) =>
+      _tParam(count == 1 ? 'pageOne' : 'pageMany', {'count': '$count'});
+
   // ───────────────────────────────────────────────────────────────────────────
   // TMDB service messages (thrown as [TmdbException] and shown in the UI)
   // ───────────────────────────────────────────────────────────────────────────
@@ -220,6 +225,19 @@ class AppStrings {
   String get tmdbRequestFailed => _t('tmdbRequestFailed');
   String get tmdbUnexpectedResponse => _t('tmdbUnexpectedResponse');
   String get tmdbUnreadableResponse => _t('tmdbUnreadableResponse');
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // OpenLibrary service messages (thrown as [OpenLibraryException])
+  // ───────────────────────────────────────────────────────────────────────────
+
+  String get openLibraryTimeout => _t('openLibraryTimeout');
+  String get openLibraryUnreachable => _t('openLibraryUnreachable');
+  String get openLibraryNotFound => _t('openLibraryNotFound');
+  String get openLibraryRequestFailed => _t('openLibraryRequestFailed');
+  String get openLibraryUnexpectedResponse =>
+      _t('openLibraryUnexpectedResponse');
+  String get openLibraryUnreadableResponse =>
+      _t('openLibraryUnreadableResponse');
 }
 
 /// `context.strings` sugar.
@@ -257,6 +275,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'scopeAll': 'Alle',
     'scopeMovies': 'Filme',
     'scopeSeries': 'Serien',
+    'scopeBooks': 'Bücher',
     // library
     'libraryLoadErrorTitle': 'Bibliothek konnte nicht geladen werden',
     'libraryEmptyTitle': 'Deine Bibliothek ist leer',
@@ -268,23 +287,25 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'metadataRefreshed': '{updated} von {total} Einträgen aktualisiert',
     'metadataRefreshPartial':
         '{updated} von {total} aktualisiert – {failed} konnten nicht geladen '
-            'werden. Die alten Angaben bleiben sichtbar.',
+        'werden. Die alten Angaben bleiben sichtbar.',
     'metadataRefreshEmpty': 'Keine TMDB-Einträge zum Aktualisieren.',
     // search
-    'searchHint': 'Filme und Serien suchen',
+    'searchHint': 'Filme, Serien und Bücher suchen',
     'searchIdleTitle': 'Finde etwas zum Verfolgen',
-    'searchIdleMessage': 'Suche Filme und Serien nach Titel.',
+    'searchIdleMessage': 'Suche Filme, Serien und Bücher nach Titel.',
     'searchFailedTitle': 'Suche fehlgeschlagen',
     'noResultsTitle': 'Keine Treffer',
     'noResultsMessage':
         'Versuch eine andere Schreibweise oder eine kürzere Suche.',
     'searchMissingToken':
         'Die Suche ist nicht verfügbar: In diesem Build ist kein '
-            'TMDB-Token konfiguriert. Baue die App mit '
-            '--dart-define=TMDB_TOKEN=…. neu.',
+        'TMDB-Token konfiguriert. Baue die App mit '
+        '--dart-define=TMDB_TOKEN=…. neu.',
     'addToLibrary': 'Zur Bibliothek hinzufügen',
     'alreadyInLibrary': 'Bereits in deiner Bibliothek',
     'addedToLibrary': 'Zur Bibliothek hinzugefügt',
+    'bookNoDescription': 'Keine Beschreibung verfügbar.',
+    'byAuthors': 'von {authors}',
     // stats
     'statsComingSoon': 'Statistik folgt bald',
     'statsDescription':
@@ -292,7 +313,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     // login
     'loginTagline':
         'Verfolge die Filme, Serien und Bücher, die du gesehen, geschaut '
-            'und gelesen hast.',
+        'und gelesen hast.',
     'emailAddress': 'E-Mail-Adresse',
     'emailHint': 'du@beispiel.de',
     'emailRequired': 'Bitte gib deine E-Mail-Adresse ein.',
@@ -301,15 +322,15 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'sendMagicLink': 'Anmelde-Link senden',
     'magicLinkDetails':
         'Kein Passwort nötig — wir senden dir einen einmaligen Anmelde-Link '
-            'per E-Mail. Bei der ersten Anmeldung wird automatisch ein Konto '
-            'angelegt.',
+        'per E-Mail. Bei der ersten Anmeldung wird automatisch ein Konto '
+        'angelegt.',
     'checkInbox': 'Prüfe dein Postfach',
     'loginSentTo':
         'Wir haben einen Anmelde-Link an {email} gesendet. Öffne ihn in '
-            'diesem Browser, um die Anmeldung abzuschließen.',
+        'diesem Browser, um die Anmeldung abzuschließen.',
     'linkExpiryNote':
         'Der Link läuft nach kurzer Zeit ab. Nichts im Postfach? Schau auch '
-            'im Spam-Ordner nach.',
+        'im Spam-Ordner nach.',
     'useDifferentEmail': 'Andere E-Mail-Adresse verwenden',
     // settings
     'signedIn': 'Angemeldet',
@@ -321,32 +342,48 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'signOut': 'Abmelden',
     'tmdbAttribution':
         'Dieses Produkt verwendet die TMDB-API, wird aber nicht von TMDB '
-            'unterstützt oder zertifiziert.',
+        'unterstützt oder zertifiziert.',
     // detail meta
     'minutes': 'Min.',
     'seasonOne': '{count} Staffel',
     'seasonMany': '{count} Staffeln',
     'episodeOne': '{count} Folge',
     'episodeMany': '{count} Folgen',
+    'pageOne': '{count} Seite',
+    'pageMany': '{count} Seiten',
     // TMDB service
     'tmdbNotConfigured':
         'TMDB ist für diesen Build nicht konfiguriert. Baue neu mit '
-            '--dart-define=TMDB_TOKEN=….',
+        '--dart-define=TMDB_TOKEN=….',
     'tmdbTimeout':
         'Die Anfrage an TMDB hat zu lange gedauert. Bitte versuch es erneut.',
     'tmdbUnreachable':
         'TMDB ist nicht erreichbar. Prüfe deine Verbindung und versuch es '
-            'erneut.',
+        'erneut.',
     'tmdbInvalidToken':
         'TMDB hat das API-Token abgelehnt. Prüfe, ob TMDB_TOKEN gültig ist.',
     'tmdbNotFound': 'TMDB konnte diesen Titel nicht finden.',
     'tmdbRateLimited':
         'Zu viele Anfragen an TMDB. Bitte warte einen Moment und versuch es '
-            'erneut.',
+        'erneut.',
     'tmdbRequestFailed':
         'TMDB-Anfrage fehlgeschlagen. Bitte versuch es erneut.',
     'tmdbUnexpectedResponse': 'TMDB hat eine unerwartete Antwort gesendet.',
     'tmdbUnreadableResponse': 'TMDB hat eine unlesbare Antwort gesendet.',
+    // OpenLibrary service
+    'openLibraryTimeout':
+        'Die Anfrage an OpenLibrary hat zu lange gedauert. Bitte versuch es '
+        'erneut.',
+    'openLibraryUnreachable':
+        'OpenLibrary ist nicht erreichbar. Prüfe deine Verbindung und versuch '
+        'es erneut.',
+    'openLibraryNotFound': 'OpenLibrary konnte diesen Titel nicht finden.',
+    'openLibraryRequestFailed':
+        'OpenLibrary-Anfrage fehlgeschlagen. Bitte versuch es erneut.',
+    'openLibraryUnexpectedResponse':
+        'OpenLibrary hat eine unerwartete Antwort gesendet.',
+    'openLibraryUnreadableResponse':
+        'OpenLibrary hat eine unlesbare Antwort gesendet.',
   },
   AppLanguage.en: <String, String>{
     // navigation / generic
@@ -370,6 +407,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'scopeAll': 'All',
     'scopeMovies': 'Movies',
     'scopeSeries': 'Series',
+    'scopeBooks': 'Books',
     // library
     'libraryLoadErrorTitle': 'Could not load your library',
     'libraryEmptyTitle': 'Your library is empty',
@@ -381,21 +419,23 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'metadataRefreshed': '{updated} of {total} items updated',
     'metadataRefreshPartial':
         '{updated} of {total} updated — {failed} could not be loaded. The '
-            'previously stored details stay visible.',
+        'previously stored details stay visible.',
     'metadataRefreshEmpty': 'No TMDB entries to update.',
     // search
-    'searchHint': 'Search movies and series',
+    'searchHint': 'Search movies, series and books',
     'searchIdleTitle': 'Find something to track',
-    'searchIdleMessage': 'Search for movies and series by title.',
+    'searchIdleMessage': 'Search for movies, series and books by title.',
     'searchFailedTitle': 'Search failed',
     'noResultsTitle': 'No results',
     'noResultsMessage': 'Try a different spelling or a shorter query.',
     'searchMissingToken':
         'Search is unavailable: this build has no TMDB token configured. '
-            'Rebuild the app with --dart-define=TMDB_TOKEN=….',
+        'Rebuild the app with --dart-define=TMDB_TOKEN=….',
     'addToLibrary': 'Add to library',
     'alreadyInLibrary': 'Already in your library',
     'addedToLibrary': 'Added to library',
+    'bookNoDescription': 'No description available.',
+    'byAuthors': 'by {authors}',
     // stats
     'statsComingSoon': 'Stats coming soon',
     'statsDescription': 'Track how much you watch and read over time.',
@@ -410,14 +450,14 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'sendMagicLink': 'Send magic link',
     'magicLinkDetails':
         'No password needed — we will email you a one-time sign-in link. '
-            'A new account is created on your first sign-in.',
+        'A new account is created on your first sign-in.',
     'checkInbox': 'Check your inbox',
     'loginSentTo':
         'We sent a sign-in link to {email}. Open it in this browser to '
-            'finish signing in.',
+        'finish signing in.',
     'linkExpiryNote':
         'The link expires after a short while. Nothing in your inbox? Check '
-            'the spam folder.',
+        'the spam folder.',
     'useDifferentEmail': 'Use a different email',
     // settings
     'signedIn': 'Signed in',
@@ -429,17 +469,19 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'signOut': 'Sign out',
     'tmdbAttribution':
         'This product uses the TMDB API but is not endorsed or certified by '
-            'TMDB.',
+        'TMDB.',
     // detail meta
     'minutes': 'min',
     'seasonOne': '{count} season',
     'seasonMany': '{count} seasons',
     'episodeOne': '{count} episode',
     'episodeMany': '{count} episodes',
+    'pageOne': '{count} page',
+    'pageMany': '{count} pages',
     // TMDB service
     'tmdbNotConfigured':
         'TMDB is not configured for this build. Rebuild with '
-            '--dart-define=TMDB_TOKEN=….',
+        '--dart-define=TMDB_TOKEN=….',
     'tmdbTimeout': 'The request to TMDB timed out. Please try again.',
     'tmdbUnreachable':
         'Could not reach TMDB. Check your connection and try again.',
@@ -451,5 +493,16 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'tmdbRequestFailed': 'TMDB request failed. Please try again.',
     'tmdbUnexpectedResponse': 'TMDB returned an unexpected response.',
     'tmdbUnreadableResponse': 'TMDB returned an unreadable response.',
+    // OpenLibrary service
+    'openLibraryTimeout':
+        'The request to OpenLibrary timed out. Please try again.',
+    'openLibraryUnreachable':
+        'Could not reach OpenLibrary. Check your connection and try again.',
+    'openLibraryNotFound': 'OpenLibrary could not find that title.',
+    'openLibraryRequestFailed': 'OpenLibrary request failed. Please try again.',
+    'openLibraryUnexpectedResponse':
+        'OpenLibrary returned an unexpected response.',
+    'openLibraryUnreadableResponse':
+        'OpenLibrary returned an unreadable response.',
   },
 };

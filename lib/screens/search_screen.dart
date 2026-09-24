@@ -4,18 +4,43 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/book_result.dart';
+import '../models/media_item.dart';
 import '../models/tmdb_result.dart';
 import '../providers/settings_provider.dart';
-import '../repositories/media_repository.dart';
+import '../services/openlibrary_client.dart';
 import '../services/tmdb_client.dart';
+import '../widgets/detail_sheets.dart';
 import '../widgets/media_widgets.dart';
 import '../widgets/settings_button.dart';
 
-/// Search tab — finds movies and series on TMDB and adds them to the library.
+/// One row in the (possibly merged) result list.
 ///
-/// The filter chips are driven by [TmdbSearchScope] so a future "Books" tab
-/// only needs a new scope value plus a branch in the metadata client; this
-/// screen renders whatever scopes exist.
+/// The screen combines two metadata sources — TMDB (movies / series) and
+/// OpenLibrary (books) — behind a single list, so every row is wrapped in one
+/// of these hits and rendered generically.
+sealed class SearchHit {
+  const SearchHit();
+}
+
+/// A movie or series hit from TMDB.
+class TmdbHit extends SearchHit {
+  const TmdbHit(this.result);
+
+  final TmdbSearchResult result;
+}
+
+/// A book (work) hit from OpenLibrary.
+class BookHit extends SearchHit {
+  const BookHit(this.result);
+
+  final BookResult result;
+}
+
+/// Search tab — finds movies, series (TMDB) and books (OpenLibrary).
+///
+/// The filter chips are driven by [TmdbSearchScope]: `all` queries **both**
+/// sources and interleaves the hits, the typed values query one source only.
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
 
@@ -43,7 +68,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   TmdbSearchScope _scope = TmdbSearchScope.all;
   String _query = '';
-  List<TmdbSearchResult> _results = const <TmdbSearchResult>[];
+  List<SearchHit> _results = const <SearchHit>[];
   bool _loading = false;
   String? _error;
 
@@ -67,7 +92,7 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() {
         _loading = false;
         _error = null;
-        _results = const <TmdbSearchResult>[];
+        _results = const <SearchHit>[];
       });
       return;
     }
@@ -90,12 +115,19 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _runSearch(String query) async {
-    final client = context.read<TmdbClient>();
+    final tmdb = context.read<TmdbClient>();
+    final books = context.read<OpenLibraryClient>();
     final strings = AppStrings.read(context);
-    final language = context.read<SettingsProvider>().tmdbLanguage;
+    final language = context.read<SettingsProvider>().language;
     final requestId = ++_requestId;
+    final scope = _scope;
 
-    if (!client.hasToken) {
+    // `all` hits both sources, `books` only OpenLibrary, the rest only TMDB.
+    final wantsTmdb = scope != TmdbSearchScope.books;
+    final wantsBooks =
+        scope == TmdbSearchScope.books || scope == TmdbSearchScope.all;
+
+    if (wantsTmdb && !tmdb.hasToken) {
       setState(() {
         _loading = false;
         _error = strings.searchMissingToken;
@@ -104,35 +136,61 @@ class _SearchScreenState extends State<SearchScreen> {
     }
 
     setState(() => _loading = true);
-    try {
-      final results = await client.search(
-        query,
-        scope: _scope,
-        language: language,
-      );
-      if (!mounted || requestId != _requestId) return;
-      setState(() {
-        _results = results;
-        _loading = false;
-        _error = null;
-      });
-    } on TmdbException catch (error) {
-      if (!mounted || requestId != _requestId) return;
-      setState(() {
-        _error = error.message;
-        _loading = false;
-      });
+
+    var tmdbHits = const <SearchHit>[];
+    var bookHits = const <SearchHit>[];
+    String? firstError;
+
+    final requests = <Future<void>>[];
+    if (wantsTmdb) {
+      requests.add(() async {
+        try {
+          final results = await tmdb.search(
+            query,
+            scope: scope,
+            language: language.tmdbCode,
+          );
+          tmdbHits = results.map<SearchHit>(TmdbHit.new).toList();
+        } on TmdbException catch (error) {
+          firstError ??= error.message;
+        }
+      }());
     }
+    if (wantsBooks) {
+      requests.add(() async {
+        try {
+          // OpenLibrary has no localized metadata — `language` only ranks
+          // German editions first on a German UI.
+          final results = await books.search(query, language: language);
+          bookHits = results.map<SearchHit>(BookHit.new).toList();
+        } on OpenLibraryException catch (error) {
+          firstError ??= error.message;
+        }
+      }());
+    }
+    await Future.wait(requests);
+
+    if (!mounted || requestId != _requestId) return;
+    final merged = _interleave(tmdbHits, bookHits);
+    setState(() {
+      _results = merged;
+      _loading = false;
+      // A single failing source only matters when it left nothing to show.
+      _error = merged.isEmpty ? firstError : null;
+    });
   }
 
-  void _openDetail(TmdbSearchResult result) {
+  void _openDetail(SearchHit hit) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
       useSafeArea: true,
       constraints: const BoxConstraints(maxWidth: 640),
-      builder: (_) => TmdbDetailSheet(result: result),
+      builder: (_) => switch (hit) {
+        TmdbHit(:final result) => TmdbDetailSheet(result: result),
+        BookHit(:final result) => BookDetailSheet(result: result),
+      },
     );
   }
 
@@ -140,7 +198,10 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     final strings = context.strings;
     return Scaffold(
-      appBar: AppBar(title: Text(strings.search), actions: const [SettingsButton()]),
+      appBar: AppBar(
+        title: Text(strings.search),
+        actions: const [SettingsButton()],
+      ),
       body: Column(
         children: [
           Padding(
@@ -234,8 +295,7 @@ class _SearchScreenState extends State<SearchScreen> {
     }
     return LayoutBuilder(
       builder: (context, constraints) {
-        final posterWidth =
-            constraints.maxWidth >= SearchScreen.wideBreakpoint
+        final posterWidth = constraints.maxWidth >= SearchScreen.wideBreakpoint
             ? SearchScreen.posterWide
             : SearchScreen.posterNarrow;
         return ListView.separated(
@@ -244,11 +304,11 @@ class _SearchScreenState extends State<SearchScreen> {
           separatorBuilder: (_, _) =>
               Divider(height: 1, indent: 16 + posterWidth + 14),
           itemBuilder: (context, index) {
-            final result = _results[index];
+            final hit = _results[index];
             return _SearchResultTile(
-              result: result,
+              hit: hit,
               posterWidth: posterWidth,
-              onTap: () => _openDetail(result),
+              onTap: () => _openDetail(hit),
             );
           },
         );
@@ -257,15 +317,29 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
-/// One hit in the search results: poster, title, year, kind badge, teaser.
+/// Round-robin merge of the two sources so neither dominates the top of the
+/// merged "All" list while keeping each source's own ranking intact.
+List<SearchHit> _interleave(List<SearchHit> first, List<SearchHit> second) {
+  if (first.isEmpty) return second;
+  if (second.isEmpty) return first;
+  final merged = <SearchHit>[];
+  final length = first.length > second.length ? first.length : second.length;
+  for (var i = 0; i < length; i++) {
+    if (i < first.length) merged.add(first[i]);
+    if (i < second.length) merged.add(second[i]);
+  }
+  return merged;
+}
+
+/// One hit in the search results: cover, title, year, kind badge, teaser.
 class _SearchResultTile extends StatelessWidget {
   const _SearchResultTile({
-    required this.result,
+    required this.hit,
     required this.posterWidth,
     required this.onTap,
   });
 
-  final TmdbSearchResult result;
+  final SearchHit hit;
   final double posterWidth;
   final VoidCallback onTap;
 
@@ -273,9 +347,35 @@ class _SearchResultTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final strings = context.strings;
-    final year = result.year;
-    final overview = result.shortOverview;
     final posterHeight = posterWidth * 3 / 2;
+
+    final (
+      String title,
+      int? year,
+      String badge,
+      IconData icon,
+      String? teaser,
+      String? imageUrl,
+    ) = switch (hit) {
+      TmdbHit(:final result) => (
+        result.title,
+        result.year,
+        strings.typeLabel(result.type),
+        tmdbTypeIcon(result.type),
+        result.shortOverview,
+        result.posterUrl,
+      ),
+      BookHit(:final result) => (
+        result.title,
+        result.firstPublishYear,
+        strings.kindLabel(MediaKind.book),
+        Icons.menu_book_outlined,
+        result.authors.isEmpty
+            ? null
+            : strings.byAuthors(result.authors.join(', ')),
+        result.coverUrl,
+      ),
+    };
 
     return InkWell(
       onTap: onTap,
@@ -285,8 +385,8 @@ class _SearchResultTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             PosterThumbnail(
-              url: result.posterUrl,
-              placeholderIcon: tmdbTypeIcon(result.type),
+              url: imageUrl,
+              placeholderIcon: icon,
               width: posterWidth,
               height: posterHeight,
               iconSize: posterWidth * 0.35,
@@ -298,7 +398,7 @@ class _SearchResultTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    result.title,
+                    title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium,
@@ -309,18 +409,15 @@ class _SearchResultTile extends StatelessWidget {
                     runSpacing: 4,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      PillBadge(
-                        icon: tmdbTypeIcon(result.type),
-                        label: strings.typeLabel(result.type),
-                      ),
+                      PillBadge(icon: icon, label: badge),
                       if (year != null)
                         Text('$year', style: theme.textTheme.bodySmall),
                     ],
                   ),
-                  if (overview != null) ...[
+                  if (teaser != null) ...[
                     const SizedBox(height: 6),
                     Text(
-                      overview,
+                      teaser,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -334,267 +431,6 @@ class _SearchResultTile extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// Bottom-sheet preview of a search hit with an "Add to library" action.
-///
-/// On open it loads the full TMDB details (runtime / season counts) and checks
-/// whether the item is already tracked. Adding is guarded twice: the
-/// pre-flight library check and the DB unique index on
-/// `(external_source, external_id)`.
-class TmdbDetailSheet extends StatefulWidget {
-  const TmdbDetailSheet({super.key, required this.result});
-
-  final TmdbSearchResult result;
-
-  @override
-  State<TmdbDetailSheet> createState() => _TmdbDetailSheetState();
-}
-
-class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
-  TmdbDetails? _details;
-  bool _loading = true;
-  bool _adding = false;
-  bool _added = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final client = context.read<TmdbClient>();
-    final repository = context.read<MediaRepository>();
-    final language = context.read<SettingsProvider>().tmdbLanguage;
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      final details = await client.fetchDetails(
-        widget.result,
-        language: language,
-      );
-      bool alreadyTracked = false;
-      try {
-        final existing = await repository.findByExternal(
-          'tmdb',
-          '${widget.result.id}',
-        );
-        alreadyTracked = existing != null;
-      } on MediaRepositoryException {
-        // Non-fatal: the insert's unique-index guard still protects us.
-      }
-      if (!mounted) return;
-      setState(() {
-        _details = details;
-        _added = alreadyTracked;
-        _loading = false;
-      });
-    } on TmdbException catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _error = error.message;
-        _loading = false;
-      });
-    }
-  }
-
-  Future<void> _add() async {
-    final details = _details;
-    if (details == null || _adding) return;
-
-    final messenger = ScaffoldMessenger.of(context);
-    final repository = context.read<MediaRepository>();
-    final strings = AppStrings.read(context);
-
-    setState(() => _adding = true);
-    try {
-      await repository.insert(details.toMediaItem());
-      if (!mounted) return;
-      setState(() {
-        _added = true;
-        _adding = false;
-      });
-      messenger.showSnackBar(SnackBar(content: Text(strings.addedToLibrary)));
-    } on MediaRepositoryException catch (error) {
-      if (!mounted) return;
-      final alreadyInLibrary = error.message.toLowerCase().contains(
-        'already in your library',
-      );
-      setState(() {
-        _added = alreadyInLibrary;
-        _adding = false;
-      });
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            alreadyInLibrary ? strings.alreadyInLibrary : error.message,
-          ),
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-    final strings = context.strings;
-    final details = _details;
-    final result = widget.result;
-
-    final posterPath = details?.posterPath ?? result.posterPath;
-    final title = details?.title ?? result.title;
-    final year = details?.year ?? result.year;
-    final overview = details?.overview ?? result.overview;
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: PosterThumbnail(
-                url: TmdbImages.poster(posterPath, size: 'w500'),
-                placeholderIcon: tmdbTypeIcon(result.type),
-                width: 168,
-                height: 252,
-                iconSize: 56,
-                borderRadius: 14,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                PillBadge(
-                  icon: tmdbTypeIcon(result.type),
-                  label: strings.typeLabel(result.type),
-                ),
-                if (year != null)
-                  Text('$year', style: theme.textTheme.bodyMedium),
-                ..._detailsMeta(context, details),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (overview != null && overview.isNotEmpty)
-              Text(overview, style: theme.textTheme.bodyMedium),
-            const Divider(height: 32),
-            _buildActions(context, cs),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Extra detail chips (runtime for movies, seasons/episodes for series).
-  List<Widget> _detailsMeta(BuildContext context, TmdbDetails? details) {
-    final strings = context.strings;
-    final style = Theme.of(context).textTheme.bodyMedium;
-    if (details is TmdbMovieDetails && details.runtime != null) {
-      return [Text('${details.runtime} ${strings.minutes}', style: style)];
-    }
-    if (details is TmdbTvDetails) {
-      final chips = <Widget>[];
-      final seasons = details.numberOfSeasons;
-      final episodes = details.numberOfEpisodes;
-      if (seasons != null) {
-        chips.add(Text(strings.seasons(seasons), style: style));
-      }
-      if (episodes != null) {
-        chips.add(Text(strings.episodes(episodes), style: style));
-      }
-      return chips;
-    }
-    return const <Widget>[];
-  }
-
-  Widget _buildActions(BuildContext context, ColorScheme cs) {
-    final strings = context.strings;
-    if (_loading) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(8),
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    final error = _error;
-    if (error != null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            error,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: cs.error),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: _load,
-            icon: const Icon(Icons.refresh),
-            label: Text(strings.retry),
-          ),
-        ],
-      );
-    }
-
-    if (_added) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.check_circle, color: cs.primary),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              strings.alreadyInLibrary,
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(color: cs.primary),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return FilledButton.icon(
-      onPressed: _adding ? null : _add,
-      icon: _adding
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.add),
-      label: Text(strings.addToLibrary),
     );
   }
 }
