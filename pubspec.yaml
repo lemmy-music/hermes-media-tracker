@@ -1,0 +1,29 @@
+name: media_tracker
+description: "Personal tracker for movies, series and books."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management (theme + future data providers).
+  provider: ^6.0.0
+
+  # Persisted local preferences (dark mode, settings).
+  shared_preferences: ^2.3.0
+
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
