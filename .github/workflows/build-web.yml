@@ -29,7 +29,7 @@ jobs:
       run: dart analyze || true
 
     - name: Build Web
-      run: flutter build web --release
+      run: flutter build web --release --dart-define=TMDB_TOKEN=${{ secrets.TMDB_TOKEN }}
 
     - name: Deploy to GitHub Pages
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'

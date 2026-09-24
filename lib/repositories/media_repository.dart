@@ -52,49 +52,59 @@ class MediaRepository {
 
   /// Loads every media item of the signed-in user, newest first.
   Future<List<MediaItem>> fetchAll() {
-    return _guard(
-      () async {
-        final rows = await client
-            .from('media_items')
-            .select()
-            .order('created_at', ascending: false);
-        return rows.map(MediaItem.fromMap).toList();
-      },
-      fallback: 'Could not load your library.',
-    );
+    return _guard(() async {
+      final rows = await client
+          .from('media_items')
+          .select()
+          .order('created_at', ascending: false);
+      return rows.map(MediaItem.fromMap).toList();
+    }, fallback: 'Could not load your library.');
   }
 
   /// Loads a single item by id.
   Future<MediaItem?> fetchById(String id) {
-    return _guard(
-      () async {
-        final row = await client
-            .from('media_items')
-            .select()
-            .eq('id', id)
-            .maybeSingle();
-        return row == null ? null : MediaItem.fromMap(row);
-      },
-      fallback: 'Could not load the item.',
-    );
+    return _guard(() async {
+      final row = await client
+          .from('media_items')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      return row == null ? null : MediaItem.fromMap(row);
+    }, fallback: 'Could not load the item.');
+  }
+
+  /// Finds the first item that came from [externalSource] / [externalId]
+  /// (e.g. `'tmdb'` / `'27205'`), or `null` when it is not tracked yet.
+  ///
+  /// Backs the "Already in your library" check before adding a search hit.
+  Future<MediaItem?> findByExternal(String externalSource, String externalId) {
+    return _guard(() async {
+      final row = await client
+          .from('media_items')
+          .select()
+          .eq('external_source', externalSource)
+          .eq('external_id', externalId)
+          .maybeSingle();
+      return row == null ? null : MediaItem.fromMap(row);
+    }, fallback: 'Could not check your library.');
   }
 
   /// Inserts [item] for the signed-in user and returns the stored row.
   Future<MediaItem> insert(MediaItem item) {
     final userId = _requireUserId();
-    return _guard(
-      () async {
-        final payload = Map<String, dynamic>.from(item.toMap())
-          ..['user_id'] = userId
-          // Server-managed columns: let the defaults / trigger win.
-          ..remove('created_at')
-          ..remove('updated_at');
-        final row =
-            await client.from('media_items').insert(payload).select().single();
-        return MediaItem.fromMap(row);
-      },
-      fallback: 'Could not add the item.',
-    );
+    return _guard(() async {
+      final payload = Map<String, dynamic>.from(item.toMap())
+        ..['user_id'] = userId
+        // Server-managed columns: let the defaults / trigger win.
+        ..remove('created_at')
+        ..remove('updated_at');
+      final row = await client
+          .from('media_items')
+          .insert(payload)
+          .select()
+          .single();
+      return MediaItem.fromMap(row);
+    }, fallback: 'Could not add the item.');
   }
 
   /// Updates an existing item (matched by [MediaItem.id]) and returns the
@@ -107,34 +117,28 @@ class MediaRepository {
       );
     }
     _requireUserId();
-    return _guard(
-      () async {
-        final payload = Map<String, dynamic>.from(item.toMap())
-          ..remove('id')
-          ..remove('user_id')
-          ..remove('created_at')
-          ..remove('updated_at');
-        final row = await client
-            .from('media_items')
-            .update(payload)
-            .eq('id', id)
-            .select()
-            .single();
-        return MediaItem.fromMap(row);
-      },
-      fallback: 'Could not save the item.',
-    );
+    return _guard(() async {
+      final payload = Map<String, dynamic>.from(item.toMap())
+        ..remove('id')
+        ..remove('user_id')
+        ..remove('created_at')
+        ..remove('updated_at');
+      final row = await client
+          .from('media_items')
+          .update(payload)
+          .eq('id', id)
+          .select()
+          .single();
+      return MediaItem.fromMap(row);
+    }, fallback: 'Could not save the item.');
   }
 
   /// Deletes an item (its episodes cascade in Postgres).
   Future<void> delete(String id) {
     _requireUserId();
-    return _guard(
-      () async {
-        await client.from('media_items').delete().eq('id', id);
-      },
-      fallback: 'Could not delete the item.',
-    );
+    return _guard(() async {
+      await client.from('media_items').delete().eq('id', id);
+    }, fallback: 'Could not delete the item.');
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -143,18 +147,15 @@ class MediaRepository {
 
   /// Loads all episodes of [mediaItemId] ordered by season/episode.
   Future<List<Episode>> fetchEpisodes(String mediaItemId) {
-    return _guard(
-      () async {
-        final rows = await client
-            .from('episodes')
-            .select()
-            .eq('media_item_id', mediaItemId)
-            .order('season_number', ascending: true)
-            .order('episode_number', ascending: true);
-        return rows.map(Episode.fromMap).toList();
-      },
-      fallback: 'Could not load the episodes.',
-    );
+    return _guard(() async {
+      final rows = await client
+          .from('episodes')
+          .select()
+          .eq('media_item_id', mediaItemId)
+          .order('season_number', ascending: true)
+          .order('episode_number', ascending: true);
+      return rows.map(Episode.fromMap).toList();
+    }, fallback: 'Could not load the episodes.');
   }
 
   /// Inserts or updates [episodes] (matched on
@@ -163,26 +164,23 @@ class MediaRepository {
   Future<List<Episode>> upsertEpisodes(List<Episode> episodes) {
     if (episodes.isEmpty) return Future<List<Episode>>.value(const <Episode>[]);
     final userId = _requireUserId();
-    return _guard(
-      () async {
-        final payloads = episodes
-            .map(
-              (episode) => Map<String, dynamic>.from(episode.toMap())
-                ..['user_id'] = userId
-                ..remove('created_at'),
-            )
-            .toList();
-        final rows = await client
-            .from('episodes')
-            .upsert(
-              payloads,
-              onConflict: 'media_item_id,season_number,episode_number',
-            )
-            .select();
-        return rows.map(Episode.fromMap).toList();
-      },
-      fallback: 'Could not save the episodes.',
-    );
+    return _guard(() async {
+      final payloads = episodes
+          .map(
+            (episode) => Map<String, dynamic>.from(episode.toMap())
+              ..['user_id'] = userId
+              ..remove('created_at'),
+          )
+          .toList();
+      final rows = await client
+          .from('episodes')
+          .upsert(
+            payloads,
+            onConflict: 'media_item_id,season_number,episode_number',
+          )
+          .select();
+      return rows.map(Episode.fromMap).toList();
+    }, fallback: 'Could not save the episodes.');
   }
 
   /// Marks a single episode as watched / unwatched and returns the stored row.
@@ -190,32 +188,28 @@ class MediaRepository {
   /// [watchedAt] is cleared explicitly when un-watching.
   Future<Episode> setWatched(String episodeId, bool watched) {
     _requireUserId();
-    return _guard(
-      () async {
-        final row = await client
-            .from('episodes')
-            .update(<String, dynamic>{
-              'watched': watched,
-              'watched_at': watched ? DateTime.now().toUtc().toIso8601String() : null,
-            })
-            .eq('id', episodeId)
-            .select()
-            .single();
-        return Episode.fromMap(row);
-      },
-      fallback: 'Could not update the episode.',
-    );
+    return _guard(() async {
+      final row = await client
+          .from('episodes')
+          .update(<String, dynamic>{
+            'watched': watched,
+            'watched_at': watched
+                ? DateTime.now().toUtc().toIso8601String()
+                : null,
+          })
+          .eq('id', episodeId)
+          .select()
+          .single();
+      return Episode.fromMap(row);
+    }, fallback: 'Could not update the episode.');
   }
 
   /// Deletes a single episode.
   Future<void> deleteEpisode(String episodeId) {
     _requireUserId();
-    return _guard(
-      () async {
-        await client.from('episodes').delete().eq('id', episodeId);
-      },
-      fallback: 'Could not delete the episode.',
-    );
+    return _guard(() async {
+      await client.from('episodes').delete().eq('id', episodeId);
+    }, fallback: 'Could not delete the episode.');
   }
 
   // ───────────────────────────────────────────────────────────────────────────

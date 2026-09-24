@@ -39,65 +39,78 @@ class _SettingsSheet extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final themeProvider = context.watch<ThemeProvider>();
     final authProvider = context.watch<AuthProvider>();
-    final isDark =
-        themeProvider.effectivelyDark(MediaQuery.of(context).platformBrightness);
+    final isDark = themeProvider.effectivelyDark(
+      MediaQuery.of(context).platformBrightness,
+    );
     final email = authProvider.email;
 
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-            child: Text(
-              'Settings',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text(
+                'Settings',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
             ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: Icon(Icons.account_circle_outlined, color: cs.primary),
-            title: Text(
-              email ?? 'Signed in',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(Icons.account_circle_outlined, color: cs.primary),
+              title: Text(
+                email ?? 'Signed in',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: const Text('Signed in with a magic link'),
             ),
-            subtitle: const Text('Signed in with a magic link'),
-          ),
-          const Divider(height: 1),
-          SwitchListTile(
-            secondary: Icon(
-              isDark ? Icons.dark_mode : Icons.light_mode,
-              color: cs.primary,
+            const Divider(height: 1),
+            SwitchListTile(
+              secondary: Icon(
+                isDark ? Icons.dark_mode : Icons.light_mode,
+                color: cs.primary,
+              ),
+              title: const Text('Dark Mode'),
+              subtitle: Text(
+                isDark
+                    ? 'Dark color scheme active'
+                    : 'Light color scheme active',
+              ),
+              value: isDark,
+              onChanged: (value) => themeProvider.setDark(value),
             ),
-            title: const Text('Dark Mode'),
-            subtitle: Text(
-              isDark ? 'Dark color scheme active' : 'Light color scheme active',
+            const Divider(height: 1),
+            ListTile(
+              leading: Icon(Icons.logout, color: cs.error),
+              title: Text('Sign out', style: TextStyle(color: cs.error)),
+              onTap: () {
+                // Grab the provider before the sheet (and its context) is gone.
+                final auth = context.read<AuthProvider>();
+                Navigator.of(context).pop();
+                auth.signOut();
+              },
             ),
-            value: isDark,
-            onChanged: (value) => themeProvider.setDark(value),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: Icon(Icons.logout, color: cs.error),
-            title: Text(
-              'Sign out',
-              style: TextStyle(color: cs.error),
+            const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+              child: Text(
+                'This product uses the TMDB API but is not endorsed or '
+                'certified by TMDB.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                textAlign: TextAlign.center,
+              ),
             ),
-            onTap: () {
-              // Grab the provider before the sheet (and its context) is gone.
-              final auth = context.read<AuthProvider>();
-              Navigator.of(context).pop();
-              auth.signOut();
-            },
-          ),
-          const SizedBox(height: 8),
-        ],
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }

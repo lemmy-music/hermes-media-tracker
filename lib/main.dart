@@ -8,6 +8,7 @@ import 'config/app_config.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'repositories/media_repository.dart';
+import 'services/tmdb_client.dart';
 import 'widgets/auth_gate.dart';
 
 Future<void> main() async {
@@ -28,10 +29,7 @@ Future<void> main() async {
   unawaited(authProvider.init());
 
   runApp(
-    MediaTrackerApp(
-      themeProvider: themeProvider,
-      authProvider: authProvider,
-    ),
+    MediaTrackerApp(themeProvider: themeProvider, authProvider: authProvider),
   );
 }
 
@@ -41,6 +39,7 @@ class MediaTrackerApp extends StatelessWidget {
     required this.themeProvider,
     required this.authProvider,
     this.repository,
+    this.tmdbClient,
   });
 
   final ThemeProvider themeProvider;
@@ -48,6 +47,9 @@ class MediaTrackerApp extends StatelessWidget {
 
   /// Overridable so widget tests can run without a live Supabase backend.
   final MediaRepository? repository;
+
+  /// Overridable so widget tests can supply a stub metadata client.
+  final TmdbClient? tmdbClient;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +60,7 @@ class MediaTrackerApp extends StatelessWidget {
         Provider<MediaRepository>(
           create: (_) => repository ?? MediaRepository(),
         ),
+        Provider<TmdbClient>(create: (_) => tmdbClient ?? TmdbClient()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (_, theme, _) => MaterialApp(

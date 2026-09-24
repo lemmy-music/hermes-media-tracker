@@ -28,6 +28,27 @@ class AppConfig {
     defaultValue: 'sb_publishable_p9YcGjG1CJOxSI_YejdsaQ_xQU8E8je',
   );
 
+  /// TMDB **Read Access Token** (v4, `Authorization: Bearer …`).
+  ///
+  /// Deliberately has **no default**: the token is injected at build time and
+  /// must never be committed. When it is empty the metadata search degrades to
+  /// a readable message instead of crashing (see [hasTmdbToken]).
+  ///
+  /// Inject locally / in CI with:
+  /// ```
+  /// flutter build web --dart-define=TMDB_TOKEN=<read-access-token>
+  /// ```
+  static const String tmdbToken = String.fromEnvironment('TMDB_TOKEN');
+
+  /// Whether a TMDB token was provided at build time.
+  static bool get hasTmdbToken => tmdbToken.isNotEmpty;
+
+  /// Base URL of the TMDB v3 REST API.
+  static const String tmdbApiBase = 'https://api.themoviedb.org/3';
+
+  /// Base URL for TMDB images (append a size + `poster_path`).
+  static const String tmdbImageBase = 'https://image.tmdb.org/t/p';
+
   /// Where Supabase should send the browser after a magic-link click.
   ///
   /// Defaults to the current origin + path, which is correct both on GitHub
