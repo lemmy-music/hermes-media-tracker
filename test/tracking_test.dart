@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:media_tracker/l10n/app_language.dart';
 import 'package:media_tracker/models/json_utils.dart';
 import 'package:media_tracker/models/media_item.dart';
+import 'package:media_tracker/models/reading_log_entry.dart';
 import 'package:media_tracker/providers/library_provider.dart';
 import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/providers/tracking_rules.dart';
@@ -29,17 +30,27 @@ class _StubTmdb extends TmdbClient {
 }
 
 /// Repository stub: an in-memory library that applies tracking writes exactly
-/// like PostgREST would (row + payload → row).
+/// like PostgREST would (row + payload → row), plus a recording reading log.
 class _FakeRepository extends MediaRepository {
-  _FakeRepository(this.items, {this.failTracking = false});
+  _FakeRepository(
+    this.items, {
+    this.failTracking = false,
+    this.failLogInsert = false,
+  });
 
   List<MediaItem> items;
 
   /// When `true`, [updateTracking] throws — to test error propagation.
   final bool failTracking;
 
+  /// When `true`, [insertReadingLog] throws — the tracking update must survive.
+  final bool failLogInsert;
+
   final List<Map<String, dynamic>> writes = [];
   final List<String> deleted = [];
+
+  /// Payloads written to the reading log.
+  final List<Map<String, dynamic>> logs = [];
 
   @override
   Future<List<MediaItem>> fetchAll() async => List<MediaItem>.of(items);
@@ -58,6 +69,27 @@ class _FakeRepository extends MediaRepository {
     final updated = MediaItem.fromMap(row);
     items[index] = updated;
     return updated;
+  }
+
+  @override
+  Future<ReadingLogEntry> insertReadingLog({
+    required String mediaItemId,
+    required int pages,
+    DateTime? loggedAt,
+  }) async {
+    if (failLogInsert) {
+      throw const MediaRepositoryException('Could not save the reading log.');
+    }
+    logs.add(<String, dynamic>{
+      'media_item_id': mediaItemId,
+      'pages': pages,
+      'logged_at': isoDateTime(loggedAt),
+    });
+    return ReadingLogEntry(
+      mediaItemId: mediaItemId,
+      pages: pages,
+      loggedAt: loggedAt,
+    );
   }
 
   @override
@@ -150,6 +182,21 @@ Map<String, dynamic> _storedRow() => <String, dynamic>{
   'completed_at': '2026-02-01T18:30:00.000Z',
   'created_at': '2026-01-01T00:00:00.000Z',
   'updated_at': '2026-02-01T00:00:00.000Z',
+};
+
+Map<String, dynamic> _logRow({
+  String id = 'log-1',
+  String userId = 'user-1',
+  String mediaItemId = 'item-1',
+  int pages = 80,
+  String loggedAt = '2026-05-01T12:00:00.000Z',
+}) => <String, dynamic>{
+  'id': id,
+  'user_id': userId,
+  'media_item_id': mediaItemId,
+  'pages': pages,
+  'logged_at': loggedAt,
+  'created_at': '2026-05-01T12:00:01.000Z',
 };
 
 Map<String, dynamic> _requestBody(http.Request request) {
@@ -378,6 +425,100 @@ void main() {
     });
   });
 
+  group('readingLogDelta', () {
+    test('a rise logs a positive delta', () {
+      expect(
+        readingLogDelta(_book(totalPages: 300, current: 120), <String, dynamic>{
+          'progress_current': 200,
+        }),
+        80,
+      );
+    });
+
+    test('a correction logs a negative delta', () {
+      expect(
+        readingLogDelta(_book(totalPages: 300, current: 200), <String, dynamic>{
+          'progress_current': 180,
+        }),
+        -20,
+      );
+    });
+
+    test('an unchanged position logs nothing', () {
+      expect(
+        readingLogDelta(_book(totalPages: 300, current: 200), <String, dynamic>{
+          'progress_current': 200,
+        }),
+        isNull,
+      );
+    });
+
+    test('a completion logs the remaining pages', () {
+      // `completed` forces progress_current = total_pages.
+      expect(
+        readingLogDelta(_book(totalPages: 300, current: 120), <String, dynamic>{
+          'progress_current': 300,
+        }),
+        180,
+      );
+    });
+
+    test('a planned reset (null position) logs the whole reduction', () {
+      expect(
+        readingLogDelta(_book(totalPages: 300, current: 250), <String, dynamic>{
+          'progress_current': null,
+        }),
+        -250,
+      );
+    });
+
+    test('a book without total_pages is never logged', () {
+      // Pure percent tracking — there is no page position at all.
+      expect(
+        readingLogDelta(_book(current: 5), <String, dynamic>{
+          'progress_current': 10,
+        }),
+        isNull,
+      );
+      expect(
+        readingLogDelta(_book(), <String, dynamic>{'progress_current': 10}),
+        isNull,
+      );
+      expect(
+        readingLogDelta(_book(), <String, dynamic>{'progress_current': null}),
+        isNull,
+      );
+    });
+
+    test('a non-book is never logged', () {
+      expect(
+        readingLogDelta(_movie(current: 5), <String, dynamic>{
+          'progress_current': 6,
+        }),
+        isNull,
+      );
+      expect(
+        readingLogDelta(_movie(), <String, dynamic>{'progress_current': 6}),
+        isNull,
+      );
+    });
+
+    test('a write without progress_current is never logged', () {
+      expect(
+        readingLogDelta(_book(totalPages: 300, current: 200), <String, dynamic>{
+          'progress_percent': 50,
+        }),
+        isNull,
+      );
+      expect(
+        readingLogDelta(_book(totalPages: 300, current: 200), <String, dynamic>{
+          'started_at': isoDateTime(now),
+        }),
+        isNull,
+      );
+    });
+  });
+
   group('MediaRepository.updateTracking', () {
     test('PATCHes only the given tracking columns', () async {
       final requests = <http.Request>[];
@@ -476,6 +617,145 @@ void main() {
     });
   });
 
+  group('MediaRepository reading log', () {
+    test(
+      'insertReadingLog sets user_id and lets the DB generate the id',
+      () async {
+        final requests = <http.Request>[];
+        final client = SupabaseClient(
+          'https://example.supabase.co',
+          'public-anon-key',
+          httpClient: MockClient((request) async {
+            requests.add(request);
+            return http.Response(
+              jsonEncode(_logRow(pages: -20)),
+              200,
+              request: request,
+              headers: <String, String>{'content-type': 'application/json'},
+            );
+          }),
+        );
+        await _recoverSession(client);
+
+        final stored = await MediaRepository(
+          client,
+        ).insertReadingLog(mediaItemId: 'item-1', pages: -20, loggedAt: now);
+
+        expect(requests, hasLength(1));
+        expect(requests.single.method, 'POST');
+        expect(requests.single.url.path, contains('reading_log'));
+        final body = _requestBody(requests.single);
+        expect(body, <String, dynamic>{
+          'user_id': 'user-1',
+          'media_item_id': 'item-1',
+          'pages': -20,
+          'logged_at': isoDateTime(now),
+        });
+        // The primary key is never sent — the database owns it.
+        expect(body.containsKey('id'), isFalse);
+        expect(stored.pages, -20);
+        expect(stored.userId, 'user-1');
+        expect(stored.mediaItemId, 'item-1');
+      },
+    );
+
+    test(
+      'insertReadingLog omits logged_at so the DB default applies',
+      () async {
+        final requests = <http.Request>[];
+        final client = SupabaseClient(
+          'https://example.supabase.co',
+          'public-anon-key',
+          httpClient: MockClient((request) async {
+            requests.add(request);
+            return http.Response(
+              jsonEncode(_logRow()),
+              200,
+              request: request,
+              headers: <String, String>{'content-type': 'application/json'},
+            );
+          }),
+        );
+        await _recoverSession(client);
+
+        await MediaRepository(
+          client,
+        ).insertReadingLog(mediaItemId: 'item-1', pages: 50);
+
+        final body = _requestBody(requests.single);
+        expect(body.containsKey('logged_at'), isFalse);
+        expect(body['pages'], 50);
+      },
+    );
+
+    test('fetchReadingLog filters by from and sorts by logged_at', () async {
+      final requests = <http.Request>[];
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'public-anon-key',
+        httpClient: MockClient((request) async {
+          requests.add(request);
+          return http.Response(
+            jsonEncode(<Map<String, dynamic>>[
+              _logRow(id: 'a', pages: 40, loggedAt: '2026-04-01T00:00:00.000Z'),
+              _logRow(
+                id: 'b',
+                pages: -10,
+                loggedAt: '2026-05-01T00:00:00.000Z',
+              ),
+            ]),
+            200,
+            request: request,
+            headers: <String, String>{'content-type': 'application/json'},
+          );
+        }),
+      );
+      await _recoverSession(client);
+
+      final entries = await MediaRepository(
+        client,
+      ).fetchReadingLog(from: DateTime.utc(2026, 1, 1));
+
+      expect(requests.single.method, 'GET');
+      expect(requests.single.url.path, contains('reading_log'));
+      final query = requests.single.url.queryParameters;
+      expect(query['logged_at'], 'gte.2026-01-01T00:00:00.000Z');
+      expect(query['order'], startsWith('logged_at.asc'));
+      expect(entries.map((entry) => entry.id), <String>['a', 'b']);
+      expect(entries.map((entry) => entry.pages), <int>[40, -10]);
+    });
+
+    test('fetchReadingLog without a date does not filter', () async {
+      final requests = <http.Request>[];
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'public-anon-key',
+        httpClient: MockClient((request) async {
+          requests.add(request);
+          return http.Response(
+            '[]',
+            200,
+            request: request,
+            headers: <String, String>{'content-type': 'application/json'},
+          );
+        }),
+      );
+      await _recoverSession(client);
+
+      final entries = await MediaRepository(client).fetchReadingLog();
+
+      expect(entries, isEmpty);
+      expect(
+        requests.single.url.queryParameters.containsKey('logged_at'),
+        isFalse,
+      );
+      expect(
+        requests.single.url.queryParameters['order'],
+        startsWith('logged_at.asc'),
+      );
+    });
+  });
+
   group('LibraryProvider tracking', () {
     test('setStatus persists and swaps the row into the list', () async {
       final repository = _FakeRepository([_movie()]);
@@ -561,6 +841,136 @@ void main() {
       expect(provider.itemById('m2')?.id, 'm2');
       expect(provider.itemById('missing'), isNull);
       expect(provider.itemById(null), isNull);
+    });
+  });
+
+  group('LibraryProvider reading log', () {
+    test('a page advance logs the positive delta', () async {
+      final repository = _FakeRepository([
+        _book(totalPages: 300, status: MediaStatus.inProgress, current: 120),
+      ]);
+      final provider = _provider(repository, now: now);
+      await provider.load();
+
+      await provider.setProgressPage(provider.items.single, 200);
+
+      expect(repository.logs, hasLength(1));
+      expect(repository.logs.single, <String, dynamic>{
+        'media_item_id': 'b',
+        'pages': 80,
+        'logged_at': isoDateTime(now),
+      });
+    });
+
+    test('a downward correction logs a negative delta', () async {
+      final repository = _FakeRepository([
+        _book(totalPages: 300, status: MediaStatus.inProgress, current: 200),
+      ]);
+      final provider = _provider(repository, now: now);
+      await provider.load();
+
+      await provider.setProgressPage(provider.items.single, 180);
+
+      expect(repository.logs.single['pages'], -20);
+    });
+
+    test('an unchanged position logs nothing', () async {
+      final repository = _FakeRepository([
+        _book(totalPages: 300, status: MediaStatus.inProgress, current: 120),
+      ]);
+      final provider = _provider(repository, now: now);
+      await provider.load();
+
+      await provider.setProgressPage(provider.items.single, 120);
+
+      expect(repository.logs, isEmpty);
+    });
+
+    test('completing via status logs the remaining pages', () async {
+      final repository = _FakeRepository([
+        _book(totalPages: 300, status: MediaStatus.inProgress, current: 120),
+      ]);
+      final provider = _provider(repository, now: now);
+      await provider.load();
+
+      await provider.setStatus(provider.items.single, MediaStatus.completed);
+
+      expect(repository.logs.single['pages'], 180);
+    });
+
+    test('a planned reset logs the whole reduction as negative', () async {
+      final repository = _FakeRepository([
+        _book(totalPages: 300, status: MediaStatus.inProgress, current: 250),
+      ]);
+      final provider = _provider(repository, now: now);
+      await provider.load();
+
+      await provider.setStatus(provider.items.single, MediaStatus.planned);
+
+      expect(repository.logs.single['pages'], -250);
+    });
+
+    test('a movie never writes to the reading log', () async {
+      final repository = _FakeRepository([
+        _movie(status: MediaStatus.inProgress, percent: 20),
+      ]);
+      final provider = _provider(repository, now: now);
+      await provider.load();
+
+      await provider.setProgressPercent(provider.items.single, 60);
+      await provider.setStatus(provider.items.single, MediaStatus.completed);
+
+      expect(repository.logs, isEmpty);
+    });
+
+    test(
+      'a book without total_pages never writes to the reading log',
+      () async {
+        final repository = _FakeRepository([
+          _book(status: MediaStatus.inProgress),
+        ]);
+        final provider = _provider(repository, now: now);
+        await provider.load();
+
+        await provider.setProgressPercent(provider.items.single, 60);
+        await provider.setStatus(provider.items.single, MediaStatus.completed);
+
+        expect(repository.logs, isEmpty);
+      },
+    );
+
+    test('a failing log insert never breaks the progress update', () async {
+      final repository = _FakeRepository([
+        _book(totalPages: 300, status: MediaStatus.inProgress, current: 120),
+      ], failLogInsert: true);
+      final provider = _provider(repository, now: now);
+      await provider.load();
+
+      // Must not throw…
+      final updated = await provider.setProgressPage(
+        provider.items.single,
+        200,
+      );
+
+      // …and the progress change is persisted and visible.
+      expect(updated.progressCurrent, 200);
+      expect(provider.items.single.progressCurrent, 200);
+      expect(repository.writes.single['progress_current'], 200);
+      expect(repository.logs, isEmpty);
+    });
+
+    test('a failing tracking update logs nothing', () async {
+      final repository = _FakeRepository([
+        _book(totalPages: 300, status: MediaStatus.inProgress, current: 120),
+      ], failTracking: true);
+      final provider = _provider(repository, now: now);
+      await provider.load();
+
+      await expectLater(
+        provider.setProgressPage(provider.items.single, 200),
+        throwsA(isA<MediaRepositoryException>()),
+      );
+      expect(repository.logs, isEmpty);
     });
   });
 }

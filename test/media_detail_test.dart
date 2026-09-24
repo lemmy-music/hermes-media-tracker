@@ -8,6 +8,7 @@ import 'package:media_tracker/l10n/app_language.dart';
 import 'package:media_tracker/main.dart';
 import 'package:media_tracker/models/episode.dart';
 import 'package:media_tracker/models/media_item.dart';
+import 'package:media_tracker/models/reading_log_entry.dart';
 import 'package:media_tracker/models/tmdb_result.dart';
 import 'package:media_tracker/providers/auth_provider.dart';
 import 'package:media_tracker/providers/settings_provider.dart';
@@ -133,6 +134,9 @@ class _FakeRepo extends MediaRepository {
 
   final List<Map<String, dynamic>> writes = [];
   final List<String> deleted = [];
+
+  /// Payloads written to the reading log.
+  final List<Map<String, dynamic>> logs = [];
   int episodeFetchCount = 0;
 
   @override
@@ -149,6 +153,20 @@ class _FakeRepo extends MediaRepository {
     final updated = MediaItem.fromMap(row);
     items[index] = updated;
     return updated;
+  }
+
+  @override
+  Future<ReadingLogEntry> insertReadingLog({
+    required String mediaItemId,
+    required int pages,
+    DateTime? loggedAt,
+  }) async {
+    logs.add(<String, dynamic>{'media_item_id': mediaItemId, 'pages': pages});
+    return ReadingLogEntry(
+      mediaItemId: mediaItemId,
+      pages: pages,
+      loggedAt: loggedAt,
+    );
   }
 
   @override
@@ -547,6 +565,68 @@ void main() {
       expect(repository.writes.last['progress_current'], 150);
       expect(repository.writes.last['progress_percent'], 50);
       expect(inDetail(find.text('50%')), findsWidgets);
+    });
+
+    testWidgets('releasing the page slider logs exactly one reading entry', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([_book(totalPages: 300, current: 0)]);
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Dune',
+        repository: repository,
+      );
+
+      // A drag fires `onChanged` many times; only the release persists — and
+      // only that single write reaches the reading log (no mini entries).
+      await tester.drag(
+        find.byKey(MediaDetailScreen.pageSliderKey),
+        const Offset(500, 0),
+      );
+      await tester.pumpAndSettle();
+
+      expect(repository.writes, hasLength(1));
+      expect(repository.logs, hasLength(1));
+      expect(repository.logs.single['pages'], greaterThan(0));
+    });
+
+    testWidgets('completing from the detail logs the remaining pages', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([_book(totalPages: 300, current: 100)]);
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Dune',
+        repository: repository,
+      );
+
+      await tester.tap(inDetail(find.text('Completed')));
+      await tester.pumpAndSettle();
+
+      // 300 pages, 100 already read → the last 200 are logged.
+      expect(repository.logs.single['pages'], 200);
+    });
+
+    testWidgets('a book without a page count writes no reading entry', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([_book(percent: 10)]);
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Dune',
+        repository: repository,
+      );
+
+      await tester.drag(
+        find.byKey(MediaDetailScreen.percentSliderKey),
+        const Offset(200, 0),
+      );
+      await tester.pumpAndSettle();
+
+      expect(repository.logs, isEmpty);
     });
 
     testWidgets(

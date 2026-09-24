@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:media_tracker/models/episode.dart';
 import 'package:media_tracker/models/media_item.dart';
+import 'package:media_tracker/models/reading_log_entry.dart';
 import 'package:media_tracker/services/stats_calculator.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +67,18 @@ Episode _episode({
   watched: watched,
   watchedAt: watchedAt,
   runtime: runtime,
+);
+
+ReadingLogEntry _log({
+  String id = 'l1',
+  String mediaItemId = 'b1',
+  required int pages,
+  DateTime? loggedAt,
+}) => ReadingLogEntry(
+  id: id,
+  mediaItemId: mediaItemId,
+  pages: pages,
+  loggedAt: loggedAt,
 );
 
 void main() {
@@ -409,42 +422,99 @@ void main() {
   });
 
   group('computePagesRead', () {
-    test('sums the page counts of books completed in the range', () {
+    test('sums the reading log entries inside the range', () {
       final pages = computePagesRead(
-        items: [
-          _book(id: 'a', completedAt: DateTime(2026, 6, 2), totalPages: 300),
-          _book(id: 'b', completedAt: DateTime(2026, 6, 9), totalPages: 200),
+        log: [
+          _log(id: 'a', pages: 120, loggedAt: DateTime(2026, 6, 2)),
+          _log(id: 'b', pages: 80, loggedAt: DateTime(2026, 6, 9)),
         ],
         range: StatsRange.month,
         now: now,
       );
-      expect(pages, 500);
+      expect(pages, 200);
     });
 
-    test('ignores unfinished, out-of-range and page-less books', () {
+    test('partial reads count; out-of-range entries do not', () {
       final pages = computePagesRead(
-        items: [
-          // Still being read → excluded (no reading history exists).
-          _book(id: 'reading', totalPages: 400),
-          // Outside the window.
-          _book(id: 'old', completedAt: DateTime(2025, 1, 1), totalPages: 100),
-          // No page count → skipped, not counted as 0.
-          _book(id: 'nopages', completedAt: DateTime(2026, 6, 3)),
-          _book(id: 'ok', completedAt: DateTime(2026, 6, 4), totalPages: 50),
+        log: [
+          // A partially read book contributes its actual progress — the whole
+          // point of the reading log (the old approximation would miss it).
+          _log(id: 'in', pages: 40, loggedAt: DateTime(2026, 6, 3)),
+          _log(id: 'old', pages: 999, loggedAt: DateTime(2025, 1, 1)),
         ],
         range: StatsRange.month,
         now: now,
       );
-      expect(pages, 50);
+      expect(pages, 40);
     });
 
-    test('a movie completion never adds pages', () {
+    test('corrections subtract and can make the total negative', () {
       final pages = computePagesRead(
-        items: [_movie(id: 'm', completedAt: DateTime(2026, 6, 2))],
+        log: [
+          _log(id: 'read', pages: 30, loggedAt: DateTime(2026, 6, 4)),
+          _log(id: 'fix', pages: -50, loggedAt: DateTime(2026, 6, 5)),
+        ],
         range: StatsRange.month,
+        now: now,
+      );
+      expect(pages, -20);
+    });
+
+    test('an empty log yields zero', () {
+      expect(
+        computePagesRead(
+          log: const <ReadingLogEntry>[],
+          range: StatsRange.all,
+          now: now,
+        ),
+        0,
+      );
+      expect(
+        computePagesRead(
+          log: const <ReadingLogEntry>[],
+          range: StatsRange.month,
+          now: now,
+        ),
+        0,
+      );
+    });
+
+    test('the window is half-open: start counts, end does not', () {
+      final pages = computePagesRead(
+        log: [
+          _log(id: 'start', pages: 10, loggedAt: DateTime(2025, 7, 1)),
+          _log(
+            id: 'before',
+            pages: 999,
+            loggedAt: DateTime(2025, 6, 30, 23, 59, 59),
+          ),
+          _log(id: 'end', pages: 999, loggedAt: DateTime(2026, 7, 1)),
+        ],
+        range: StatsRange.twelveMonths,
+        now: now,
+      );
+      expect(pages, 10);
+    });
+
+    test('entries without a timestamp are skipped, never crash', () {
+      final pages = computePagesRead(
+        log: [_log(id: 'no-time', pages: 100, loggedAt: null)],
+        range: StatsRange.all,
         now: now,
       );
       expect(pages, 0);
+    });
+
+    test('all time sums the whole log', () {
+      final pages = computePagesRead(
+        log: [
+          _log(id: 'a', pages: 100, loggedAt: DateTime(2010, 1, 1)),
+          _log(id: 'b', pages: 25, loggedAt: DateTime(2026, 6, 1)),
+        ],
+        range: StatsRange.all,
+        now: now,
+      );
+      expect(pages, 125);
     });
   });
 
@@ -458,6 +528,7 @@ void main() {
         episodes: [
           _episode(id: 'e1', watchedAt: DateTime(2026, 6, 4), runtime: 40),
         ],
+        log: [_log(id: 'l1', pages: 250, loggedAt: DateTime(2026, 6, 3))],
         range: StatsRange.month,
         now: now,
       );
@@ -467,6 +538,21 @@ void main() {
       expect(result.completions.buckets.single.total, 3);
       expect(result.watchTime.totalMinutes, 140);
       expect(result.pagesRead, 250);
+    });
+
+    test('pages come from the log, not from completed books', () {
+      // A completed 400-page book with no log entry contributes nothing…
+      final result = computeStats(
+        items: [
+          _book(id: 'b', completedAt: DateTime(2026, 6, 3), totalPages: 400),
+        ],
+        episodes: const <Episode>[],
+        log: [_log(id: 'l1', pages: 12, loggedAt: DateTime(2026, 6, 10))],
+        range: StatsRange.month,
+        now: now,
+      );
+      // …and a partially read book is reflected by its log entries.
+      expect(result.pagesRead, 12);
     });
 
     test('the injected clock drives the range window', () {
@@ -480,6 +566,7 @@ void main() {
             .calculate(
               items: items,
               episodes: const <Episode>[],
+              log: const <ReadingLogEntry>[],
               range: StatsRange.month,
             )
             .watchTime
@@ -494,6 +581,7 @@ void main() {
             .calculate(
               items: items,
               episodes: const <Episode>[],
+              log: const <ReadingLogEntry>[],
               range: StatsRange.month,
             )
             .watchTime

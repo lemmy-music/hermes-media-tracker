@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_strings.dart';
 import '../models/episode.dart';
 import '../models/media_item.dart';
+import '../models/reading_log_entry.dart';
 import '../repositories/media_repository.dart';
 import '../services/stats_calculator.dart';
 import '../widgets/media_widgets.dart';
@@ -20,9 +21,9 @@ import '../widgets/settings_button.dart';
 ///    time (stacked by category), watch time in minutes and pages read.
 ///
 /// All the math lives in [StatsCalculator] (`services/stats_calculator.dart`)
-/// so this file only renders. The screen loads its own data (all items plus
-/// all episodes) so a plain pull-to-refresh / refresh button always reflects
-/// the current library.
+/// so this file only renders. The screen loads its own data (all items, all
+/// episodes and the reading log) so a plain pull-to-refresh / refresh button
+/// always reflects the current library.
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key, this.clock});
 
@@ -41,6 +42,7 @@ class _StatsScreenState extends State<StatsScreen> {
 
   List<MediaItem> _items = const <MediaItem>[];
   List<Episode> _episodes = const <Episode>[];
+  List<ReadingLogEntry> _readingLog = const <ReadingLogEntry>[];
   bool _loading = true;
   String? _error;
 
@@ -64,10 +66,12 @@ class _StatsScreenState extends State<StatsScreen> {
     try {
       final items = await repository.fetchAll();
       final episodes = await repository.fetchAllEpisodes();
+      final readingLog = await repository.fetchReadingLog();
       if (!mounted) return;
       setState(() {
         _items = items;
         _episodes = episodes;
+        _readingLog = readingLog;
         _loading = false;
       });
     } on MediaRepositoryException catch (error) {
@@ -123,6 +127,7 @@ class _StatsScreenState extends State<StatsScreen> {
     final result = _calculator.calculate(
       items: _items,
       episodes: _episodes,
+      log: _readingLog,
       range: _range,
     );
 

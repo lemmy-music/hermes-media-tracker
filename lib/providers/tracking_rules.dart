@@ -122,6 +122,55 @@ Map<String, dynamic> completedAtFields(DateTime? value) => <String, dynamic>{
   'completed_at': isoDateTime(value),
 };
 
+/// The signed page delta to write to the reading log for a tracking change.
+///
+/// This is the **single funnel** of the feature: every progress/status write
+/// goes through it, so "pages read" can never be double-counted or missed by
+/// one code path. It is a pure function of the *current* [item] and the
+/// [fields] about to be written, which keeps the rule testable on its own
+/// (no widget, no database).
+///
+/// Returns `null` when nothing must be logged:
+///
+///  * **Never for non-books** — movies/series have no page position.
+///  * **Never for a book without `total_pages`** — such a book is tracked by
+///    pure percent, it has no page position and therefore no reading delta.
+///  * **Never when `progress_current` is not part of the write** (e.g. only a
+///    timestamp, or the percent of a page-less book was edited).
+///  * **Never for a delta of `0`** — an unchanged position is not an entry
+///    (logging `0` rows would bloat the table without adding information).
+///
+/// Otherwise the difference between the new and the previous position is
+/// returned: positive for reading (`120 → 200` ⇒ `+80`), negative for a
+/// correction (`200 → 180` ⇒ `-20`). Clearing the position (`progress_current`
+/// written as `null`, e.g. the `planned` reset) counts as `0`, so the whole
+/// reduction is logged as a negative delta.
+///
+/// Note this also covers the derived `progress_current` that
+/// [totalPagesFields] writes when a corrected `total_pages` clamps the current
+/// page: the position really did change, so it is logged as a correction.
+int? readingLogDelta(MediaItem item, Map<String, dynamic> fields) {
+  // Only books carry a meaningful page position.
+  if (item.kind != MediaKind.book) return null;
+
+  // A book without a page count is tracked purely by percent — no page
+  // position exists, so there is nothing to log. (Commented on purpose:
+  // this is the documented behaviour of the feature.)
+  final total = item.totalPages;
+  if (total == null || total <= 0) return null;
+
+  // No page position in this write → the position cannot have changed.
+  if (!fields.containsKey('progress_current')) return null;
+
+  final previous = item.progressCurrent ?? 0;
+  final raw = fields['progress_current'];
+  // An explicit `null` means "back to the start" (the `planned` reset).
+  final next = raw == null ? 0 : (jsonInt(raw) ?? 0);
+  final delta = next - previous;
+  if (delta == 0) return null;
+  return delta;
+}
+
 /// Automation shared by both progress writers: 100 % completes the item, sets
 /// `completed_at` if still empty — but never touches an explicitly dropped one.
 Map<String, dynamic> _completionFields(

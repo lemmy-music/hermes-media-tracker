@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:media_tracker/l10n/app_language.dart';
 import 'package:media_tracker/models/episode.dart';
 import 'package:media_tracker/models/media_item.dart';
+import 'package:media_tracker/models/reading_log_entry.dart';
 import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/repositories/media_repository.dart';
 import 'package:media_tracker/screens/stats_screen.dart';
@@ -14,17 +15,20 @@ class _FakeRepository extends MediaRepository {
   _FakeRepository({
     this.items = const <MediaItem>[],
     this.episodes = const <Episode>[],
+    this.readingLog = const <ReadingLogEntry>[],
     this.error,
   });
 
   List<MediaItem> items;
   List<Episode> episodes;
+  List<ReadingLogEntry> readingLog;
 
-  /// When set, both fetches throw a [MediaRepositoryException] with this text.
+  /// When set, all fetches throw a [MediaRepositoryException] with this text.
   String? error;
 
   int fetchAllCount = 0;
   int fetchEpisodesCount = 0;
+  int fetchReadingLogCount = 0;
 
   @override
   Future<List<MediaItem>> fetchAll() async {
@@ -40,6 +44,14 @@ class _FakeRepository extends MediaRepository {
     final error = this.error;
     if (error != null) throw MediaRepositoryException(error);
     return episodes;
+  }
+
+  @override
+  Future<List<ReadingLogEntry>> fetchReadingLog({DateTime? from}) async {
+    fetchReadingLogCount++;
+    final error = this.error;
+    if (error != null) throw MediaRepositoryException(error);
+    return readingLog;
   }
 }
 
@@ -87,6 +99,14 @@ Episode _episode({String id = 'e1', DateTime? watchedAt, int? runtime}) =>
       runtime: runtime,
     );
 
+ReadingLogEntry _log({String id = 'l1', int pages = 100, DateTime? loggedAt}) =>
+    ReadingLogEntry(
+      id: id,
+      mediaItemId: 'b1',
+      pages: pages,
+      loggedAt: loggedAt,
+    );
+
 Future<void> _pumpStats(
   WidgetTester tester, {
   required MediaRepository repository,
@@ -131,6 +151,8 @@ void main() {
       episodes: [
         _episode(id: 'e1', watchedAt: DateTime(2026, 6, 4), runtime: 40),
       ],
+      // The pages figure comes from the reading log now.
+      readingLog: [_log(id: 'l1', pages: 300, loggedAt: DateTime(2026, 6, 3))],
     );
     await _pumpStats(tester, repository: repository);
 
@@ -151,6 +173,51 @@ void main() {
 
     expect(repository.fetchAllCount, 1);
     expect(repository.fetchEpisodesCount, 1);
+    expect(repository.fetchReadingLogCount, 1);
+  });
+
+  testWidgets('pages come from the reading log, including corrections', (
+    WidgetTester tester,
+  ) async {
+    // 100 read, 20 corrected back → 80 in the period.
+    final repository = _FakeRepository(
+      items: [_book(id: 'b', totalPages: 400, status: MediaStatus.inProgress)],
+      readingLog: [
+        _log(id: 'read', pages: 100, loggedAt: DateTime(2026, 6, 5)),
+        _log(id: 'fix', pages: -20, loggedAt: DateTime(2026, 6, 6)),
+      ],
+    );
+    await _pumpStats(tester, repository: repository);
+
+    // A still-unfinished book still contributes — that is the whole point.
+    expect(find.text('80 pages'), findsOneWidget);
+  });
+
+  testWidgets('a period dominated by corrections shows a negative total', (
+    WidgetTester tester,
+  ) async {
+    final repository = _FakeRepository(
+      items: [_book(id: 'b', totalPages: 400)],
+      readingLog: [
+        _log(id: 'read', pages: 10, loggedAt: DateTime(2026, 6, 5)),
+        _log(id: 'fix', pages: -90, loggedAt: DateTime(2026, 6, 6)),
+      ],
+    );
+    await _pumpStats(tester, repository: repository);
+
+    // Rendered as a negative number instead of crashing or clamping to 0.
+    expect(find.text('-80 pages'), findsOneWidget);
+  });
+
+  testWidgets('an empty reading log shows zero pages', (
+    WidgetTester tester,
+  ) async {
+    final repository = _FakeRepository(
+      items: [_movie(id: 'a', completedAt: DateTime(2026, 6, 2))],
+    );
+    await _pumpStats(tester, repository: repository);
+
+    expect(find.text('0 pages'), findsOneWidget);
   });
 
   testWidgets('shows a friendly empty state for an empty library', (

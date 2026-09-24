@@ -23,6 +23,7 @@ library;
 
 import '../models/episode.dart';
 import '../models/media_item.dart';
+import '../models/reading_log_entry.dart';
 
 /// The selectable time window of the time-based stats block.
 ///
@@ -166,8 +167,8 @@ class StatsResult {
   final CompletionsSeries completions;
   final WatchTimeStats watchTime;
 
-  /// Sum of `total_pages` of books completed in the range (see
-  /// [computePagesRead] for the deliberate approximation).
+  /// Sum of the signed `pages` from the reading log within the range — see
+  /// [computePagesRead]. Negative values are possible (corrections).
   final int pagesRead;
 
   bool get isEmpty => overview.isEmpty;
@@ -448,25 +449,28 @@ WatchTimeStats computeWatchTime({
 // pages (block 2.3)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Sums `total_pages` of the books **completed** within the range.
+/// Sums the signed `pages` of every reading-log entry inside the range.
 ///
-/// **Deliberate approximation:** there is no reading history, so a book only
-/// contributes once it is completed, and then with its whole page count.
-/// Partially read books contribute nothing — their "pages read so far" cannot
-/// be derived from the stored data.
+/// This is the exact figure the old approximation could not produce: each
+/// entry is one commit of a book's page position (slider released, page
+/// submitted, completion or reset), so partially read books contribute their
+/// actual progress instead of nothing.
+///
+/// [ReadingLogEntry.pages] is **signed** (a correction downward is negative),
+/// so the result may be negative in a period dominated by corrections — the
+/// caller is expected to render that as-is rather than clamping it. Entries
+/// without a `logged_at` are skipped, and an empty log yields `0`. The window
+/// is the usual half-open `[start, end)`.
 int computePagesRead({
-  required List<MediaItem> items,
+  required List<ReadingLogEntry> log,
   required StatsRange range,
   required DateTime now,
 }) {
   final window = statsWindow(range, now);
   var pages = 0;
-  for (final item in items) {
-    if (item.kind != MediaKind.book) continue;
-    if (!_inWindow(item.completedAt, window.start, window.end)) continue;
-    final total = item.totalPages;
-    if (total == null) continue;
-    pages += total;
+  for (final entry in log) {
+    if (!_inWindow(entry.loggedAt, window.start, window.end)) continue;
+    pages += entry.pages;
   }
   return pages;
 }
@@ -479,6 +483,7 @@ int computePagesRead({
 StatsResult computeStats({
   required List<MediaItem> items,
   required List<Episode> episodes,
+  required List<ReadingLogEntry> log,
   required StatsRange range,
   required DateTime now,
 }) {
@@ -496,7 +501,7 @@ StatsResult computeStats({
       range: range,
       now: now,
     ),
-    pagesRead: computePagesRead(items: items, range: range, now: now),
+    pagesRead: computePagesRead(log: log, range: range, now: now),
   );
 }
 
@@ -516,10 +521,12 @@ class StatsCalculator {
   StatsResult calculate({
     required List<MediaItem> items,
     required List<Episode> episodes,
+    required List<ReadingLogEntry> log,
     required StatsRange range,
   }) => computeStats(
     items: items,
     episodes: episodes,
+    log: log,
     range: range,
     now: _clock(),
   );

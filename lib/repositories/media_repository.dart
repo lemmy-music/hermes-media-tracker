@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/episode.dart';
 import '../models/json_utils.dart';
 import '../models/media_item.dart';
+import '../models/reading_log_entry.dart';
 
 /// A Supabase failure translated into a message that is safe to show the user.
 class MediaRepositoryException implements Exception {
@@ -246,6 +247,53 @@ class MediaRepository {
   /// Sets `total_pages` — or clears it with `null`.
   Future<MediaItem> setTotalPages(String id, int? value) =>
       updateTracking(id, <String, dynamic>{'total_pages': value});
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // reading log
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /// Appends one entry to the user's reading log and returns the stored row.
+  ///
+  /// [pages] is **signed** — a positive value is reading progress, a negative
+  /// value a correction. `user_id` is injected from the signed-in session (not
+  /// just relying on RLS) and `id` / `created_at` are left to the database.
+  /// [loggedAt] defaults to `now()` in Postgres when omitted.
+  Future<ReadingLogEntry> insertReadingLog({
+    required String mediaItemId,
+    required int pages,
+    DateTime? loggedAt,
+  }) {
+    final userId = _requireUserId();
+    return _guard(() async {
+      final payload = <String, dynamic>{
+        'user_id': userId,
+        'media_item_id': mediaItemId,
+        'pages': pages,
+        if (loggedAt != null) 'logged_at': isoDateTime(loggedAt),
+      };
+      final row = await client
+          .from('reading_log')
+          .insert(payload)
+          .select()
+          .single();
+      return ReadingLogEntry.fromMap(row);
+    }, fallback: 'Could not save the reading log.');
+  }
+
+  /// Loads the user's reading log, oldest first.
+  ///
+  /// When [from] is given, only entries with `logged_at >= from` are returned.
+  /// RLS restricts the query to the signed-in owner.
+  Future<List<ReadingLogEntry>> fetchReadingLog({DateTime? from}) {
+    return _guard(() async {
+      var query = client.from('reading_log').select();
+      if (from != null) {
+        query = query.gte('logged_at', isoDateTime(from)!);
+      }
+      final rows = await query.order('logged_at', ascending: true);
+      return rows.map(ReadingLogEntry.fromMap).toList();
+    }, fallback: 'Could not load your reading log.');
+  }
 
   // ───────────────────────────────────────────────────────────────────────────
   // episodes

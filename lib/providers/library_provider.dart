@@ -241,13 +241,42 @@ class LibraryProvider extends ChangeNotifier {
 
   /// Writes [fields], swaps the stored row into the list and notifies — so the
   /// library list and the detail view both reflect the change immediately.
+  ///
+  /// This is also the **single funnel of the reading log**: the signed page
+  /// delta of a book's position change ([readingLogDelta]) is appended after
+  /// the tracking write succeeded. Every progress / status path — the detail
+  /// pagination, the sliders' `onChangeEnd`, the `completed` and `planned`
+  /// status transitions — lands here, so none of them can miss the log.
   Future<MediaItem> _applyTracking(
     MediaItem item,
     Map<String, dynamic> fields,
   ) async {
+    final delta = readingLogDelta(item, fields);
     final updated = await _repository.updateTracking(_requireId(item), fields);
     _replace(updated);
+    final id = updated.id;
+    if (delta != null && id != null) {
+      await _logReading(id, delta);
+    }
     return updated;
+  }
+
+  /// Appends [pages] to the reading log for [mediaItemId].
+  ///
+  /// **Robustness first:** this is a best-effort side channel. A failing log
+  /// write must *never* break the progress update it accompanies — the error is
+  /// swallowed (the tracking change is already persisted). That also keeps the
+  /// app working before the `0003_reading_log` migration has been applied.
+  Future<void> _logReading(String mediaItemId, int pages) async {
+    try {
+      await _repository.insertReadingLog(
+        mediaItemId: mediaItemId,
+        pages: pages,
+        loggedAt: _clock(),
+      );
+    } catch (_) {
+      // Deliberately swallowed — see the doc comment.
+    }
   }
 
   /// Replaces the stored copy of [item] (matched by id), keeping the list order.

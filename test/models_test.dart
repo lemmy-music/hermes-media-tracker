@@ -2,50 +2,51 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:media_tracker/models/episode.dart';
 import 'package:media_tracker/models/media_item.dart';
+import 'package:media_tracker/models/reading_log_entry.dart';
 import 'package:media_tracker/repositories/media_repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 Map<String, dynamic> _bookRow() => <String, dynamic>{
-      'id': '11111111-1111-1111-1111-111111111111',
-      'user_id': '22222222-2222-2222-2222-222222222222',
-      'kind': 'book',
-      'title': 'Dune',
-      'original_title': 'Dune',
-      'release_year': 1965,
-      'overview': 'Spice must flow.',
-      'poster_url': null,
-      'external_source': 'openlibrary',
-      'external_id': 'OL123W',
-      'authors': <dynamic>['Frank Herbert'],
-      'total_pages': 412,
-      'isbn': '9780441013593',
-      'total_seasons': null,
-      'total_episodes': null,
-      'status': 'in_progress',
-      // `numeric` may arrive as a string depending on the column type.
-      'progress_percent': '42.50',
-      'progress_current': 175,
-      'started_at': '2026-01-02T03:04:05.000Z',
-      'completed_at': null,
-      'created_at': '2026-01-01T00:00:00.000Z',
-      'updated_at': '2026-01-03T10:00:00.000Z',
-    };
+  'id': '11111111-1111-1111-1111-111111111111',
+  'user_id': '22222222-2222-2222-2222-222222222222',
+  'kind': 'book',
+  'title': 'Dune',
+  'original_title': 'Dune',
+  'release_year': 1965,
+  'overview': 'Spice must flow.',
+  'poster_url': null,
+  'external_source': 'openlibrary',
+  'external_id': 'OL123W',
+  'authors': <dynamic>['Frank Herbert'],
+  'total_pages': 412,
+  'isbn': '9780441013593',
+  'total_seasons': null,
+  'total_episodes': null,
+  'status': 'in_progress',
+  // `numeric` may arrive as a string depending on the column type.
+  'progress_percent': '42.50',
+  'progress_current': 175,
+  'started_at': '2026-01-02T03:04:05.000Z',
+  'completed_at': null,
+  'created_at': '2026-01-01T00:00:00.000Z',
+  'updated_at': '2026-01-03T10:00:00.000Z',
+};
 
 Map<String, dynamic> _episodeRow() => <String, dynamic>{
-      'id': '33333333-3333-3333-3333-333333333333',
-      'user_id': '22222222-2222-2222-2222-222222222222',
-      'media_item_id': '11111111-1111-1111-1111-111111111111',
-      'season_number': 2,
-      'episode_number': 5,
-      'name': 'Breakage',
-      'overview': null,
-      'air_date': '2026-02-03',
-      'still_url': null,
-      'runtime': 47,
-      'watched': true,
-      'watched_at': '2026-02-04T20:15:00.000Z',
-      'created_at': '2026-02-01T00:00:00.000Z',
-    };
+  'id': '33333333-3333-3333-3333-333333333333',
+  'user_id': '22222222-2222-2222-2222-222222222222',
+  'media_item_id': '11111111-1111-1111-1111-111111111111',
+  'season_number': 2,
+  'episode_number': 5,
+  'name': 'Breakage',
+  'overview': null,
+  'air_date': '2026-02-03',
+  'still_url': null,
+  'runtime': 47,
+  'watched': true,
+  'watched_at': '2026-02-04T20:15:00.000Z',
+  'created_at': '2026-02-01T00:00:00.000Z',
+};
 
 void main() {
   group('MediaItem', () {
@@ -151,6 +152,76 @@ void main() {
       expect(map['air_date'], '2026-02-03');
       expect(map['watched'], isTrue);
       expect(map.containsKey('overview'), isFalse);
+    });
+  });
+
+  group('ReadingLogEntry', () {
+    test('fromMap maps every column, accepting a stringified int', () {
+      final entry = ReadingLogEntry.fromMap(<String, dynamic>{
+        'id': 'log-1',
+        'user_id': '22222222-2222-2222-2222-222222222222',
+        'media_item_id': '11111111-1111-1111-1111-111111111111',
+        // `int` may arrive as a string over PostgREST.
+        'pages': '-20',
+        'logged_at': '2026-05-01T12:00:00.000Z',
+        'created_at': '2026-05-01T12:00:01.000Z',
+      });
+
+      expect(entry.id, 'log-1');
+      expect(entry.userId, '22222222-2222-2222-2222-222222222222');
+      expect(entry.mediaItemId, '11111111-1111-1111-1111-111111111111');
+      expect(entry.pages, -20);
+      expect(entry.loggedAt, isNotNull);
+      expect(entry.loggedAt!.toUtc(), DateTime.utc(2026, 5, 1, 12));
+      expect(entry.createdAt, isNotNull);
+    });
+
+    test('a row with missing fields never throws', () {
+      final entry = ReadingLogEntry.fromMap(<String, dynamic>{});
+
+      expect(entry.id, isNull);
+      expect(entry.userId, isNull);
+      expect(entry.mediaItemId, '');
+      expect(entry.pages, 0);
+      expect(entry.loggedAt, isNull);
+      expect(entry.createdAt, isNull);
+    });
+
+    test('toMap omits the server-managed columns', () {
+      final map = ReadingLogEntry(
+        id: 'log-1',
+        userId: 'user-1',
+        mediaItemId: 'item-1',
+        pages: -20,
+        loggedAt: DateTime.utc(2026, 5, 1, 12),
+        createdAt: DateTime.utc(2026, 5, 1, 12, 0, 1),
+      ).toMap();
+
+      expect(map['id'], 'log-1');
+      expect(map['user_id'], 'user-1');
+      expect(map['media_item_id'], 'item-1');
+      expect(map['pages'], -20);
+      expect(map['logged_at'], '2026-05-01T12:00:00.000Z');
+    });
+
+    test('asNew drops identity columns and keeps the reading', () {
+      final entry = ReadingLogEntry(
+        id: 'log-1',
+        userId: 'user-1',
+        mediaItemId: 'item-1',
+        pages: 5,
+        loggedAt: DateTime.utc(2026, 5, 1, 12),
+        createdAt: DateTime.utc(2026, 5, 1, 12, 0, 1),
+      ).asNew();
+
+      expect(entry.id, isNull);
+      expect(entry.userId, isNull);
+      expect(entry.createdAt, isNull);
+      expect(entry.mediaItemId, 'item-1');
+      expect(entry.pages, 5);
+      expect(entry.loggedAt, isNotNull);
+      expect(entry.toMap().containsKey('id'), isFalse);
+      expect(entry.toMap().containsKey('user_id'), isFalse);
     });
   });
 

@@ -619,8 +619,8 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'statsNoCompletions': 'In diesem Zeitraum keine Abschlüsse.',
     'statsPages': 'Seiten',
     'statsPagesHint':
-        'Seitenzahl abgeschlossener Bücher – eine Näherung, da es keine '
-        'Lese-Historie gibt.',
+        'Tatsächlich gelesene Seiten aus dem Lese-Log. Korrekturen nach unten '
+        'sind als negative Werte enthalten.',
     'range1Month': '1 Monat',
     'range6Months': '6 Monate',
     'range12Months': '12 Monate',
@@ -860,8 +860,8 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'statsNoCompletions': 'No completions in this period.',
     'statsPages': 'Pages',
     'statsPagesHint':
-        'Page count of completed books — an approximation, since there is no '
-        'reading history.',
+        'Actually read pages from the reading log. Downward corrections are '
+        'included as negative values.',
     'range1Month': '1 month',
     'range6Months': '6 months',
     'range12Months': '12 months',
