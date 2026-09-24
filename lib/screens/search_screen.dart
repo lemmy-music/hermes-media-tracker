@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_language.dart';
 import '../l10n/app_strings.dart';
 import '../models/book_result.dart';
 import '../models/media_item.dart';
 import '../models/tmdb_result.dart';
 import '../providers/settings_provider.dart';
+import '../services/isbn.dart';
 import '../services/openlibrary_client.dart';
 import '../services/tmdb_client.dart';
 import '../widgets/detail_sheets.dart';
@@ -72,6 +74,10 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _loading = false;
   String? _error;
 
+  /// The ISBN that was looked up without a hit — drives the dedicated
+  /// "no book for this ISBN" empty state. `null` for a normal search.
+  String? _isbnNotFound;
+
   @override
   void dispose() {
     _debounceTimer?.cancel();
@@ -84,6 +90,18 @@ class _SearchScreenState extends State<SearchScreen> {
   /// `true` when the current query is long enough to search for.
   bool get _isActive => _trimmed.length >= SearchScreen.minQueryLength;
 
+  /// The current query parsed as ISBN, or `null` — drives the ISBN flow.
+  Isbn? get _isbn => parseIsbn(_query);
+
+  /// Whether the active scope can run an ISBN lookup.
+  ///
+  /// Pragmatic call: an ISBN is a **book** concept, so it runs on the `Books`
+  /// and `All` scopes. On `Movies` / `Series` a valid ISBN falls back to the
+  /// normal (TMDB) search — the user explicitly asked for those types.
+  bool get _isbnScopeActive =>
+      _isbn != null &&
+      (_scope == TmdbSearchScope.books || _scope == TmdbSearchScope.all);
+
   void _onQueryChanged(String value) {
     _debounceTimer?.cancel();
     setState(() => _query = value);
@@ -93,6 +111,7 @@ class _SearchScreenState extends State<SearchScreen> {
         _loading = false;
         _error = null;
         _results = const <SearchHit>[];
+        _isbnNotFound = null;
       });
       return;
     }
@@ -100,6 +119,7 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _isbnNotFound = null;
     });
     _debounceTimer = Timer(_debounce, () => _runSearch(_trimmed));
   }
@@ -115,12 +135,22 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _runSearch(String query) async {
-    final tmdb = context.read<TmdbClient>();
-    final books = context.read<OpenLibraryClient>();
-    final strings = AppStrings.read(context);
     final language = context.read<SettingsProvider>().language;
     final requestId = ++_requestId;
     final scope = _scope;
+
+    // A valid ISBN on the Books / All scope turns the search into an ISBN
+    // lookup instead of the normal title query (see [_isbnScopeActive]).
+    final isbn = parseIsbn(query);
+    if (isbn != null &&
+        (scope == TmdbSearchScope.books || scope == TmdbSearchScope.all)) {
+      await _runIsbnLookup(isbn, requestId, language);
+      return;
+    }
+
+    final tmdb = context.read<TmdbClient>();
+    final books = context.read<OpenLibraryClient>();
+    final strings = AppStrings.read(context);
 
     // `all` hits both sources, `books` only OpenLibrary, the rest only TMDB.
     final wantsTmdb = scope != TmdbSearchScope.books;
@@ -135,7 +165,10 @@ class _SearchScreenState extends State<SearchScreen> {
       return;
     }
 
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _isbnNotFound = null;
+    });
 
     var tmdbHits = const <SearchHit>[];
     var bookHits = const <SearchHit>[];
@@ -180,6 +213,40 @@ class _SearchScreenState extends State<SearchScreen> {
     });
   }
 
+  /// Runs the ISBN lookup and shows either the single book hit or the
+  /// localized "no book for this ISBN" state. Never touches the normal search.
+  Future<void> _runIsbnLookup(
+    Isbn isbn,
+    int requestId,
+    AppLanguage language,
+  ) async {
+    final books = context.read<OpenLibraryClient>();
+    setState(() {
+      _loading = true;
+      _error = null;
+      _isbnNotFound = null;
+    });
+
+    try {
+      final result = await books.lookupByIsbn(isbn.value, language: language);
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _loading = false;
+        _results = result == null
+            ? const <SearchHit>[]
+            : <SearchHit>[BookHit(result)];
+        _isbnNotFound = result == null ? isbn.value : null;
+      });
+    } on OpenLibraryException catch (error) {
+      if (!mounted || requestId != _requestId) return;
+      setState(() {
+        _loading = false;
+        _results = const <SearchHit>[];
+        _error = error.message;
+      });
+    }
+  }
+
   void _openDetail(SearchHit hit) {
     showModalBottomSheet<void>(
       context: context,
@@ -206,29 +273,46 @@ class _SearchScreenState extends State<SearchScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: TextField(
-              controller: _controller,
-              onChanged: _onQueryChanged,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                hintText: strings.searchHint,
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        tooltip: strings.clear,
-                        onPressed: () {
-                          _controller.clear();
-                          _onQueryChanged('');
-                        },
-                      ),
-                filled: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _controller,
+                  onChanged: _onQueryChanged,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    hintText: strings.searchHint,
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            tooltip: strings.clear,
+                            onPressed: () {
+                              _controller.clear();
+                              _onQueryChanged('');
+                            },
+                          ),
+                    filled: true,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
                 ),
-              ),
+                // Subtle hint that the field also accepts an ISBN. Hidden once
+                // the user starts typing to keep the result area clean.
+                if (_query.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, left: 4),
+                    child: Text(
+                      strings.searchIsbnHint,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           Padding(
@@ -250,6 +334,28 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
           ),
+          // Visible marker that the running query is treated as an ISBN.
+          if (_isbnScopeActive)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.qr_code_2,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    strings.isbnLookupLabel,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 8),
           Expanded(child: _buildBody(context)),
         ],
@@ -286,6 +392,15 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
     if (_results.isEmpty) {
+      final isbn = _isbnNotFound;
+      if (isbn != null) {
+        return CenteredMessage(
+          icon: Icons.menu_book_outlined,
+          title: strings.isbnNotFoundTitle,
+          message: strings.isbnNotFoundMessage(isbn),
+          scrollable: false,
+        );
+      }
       return CenteredMessage(
         icon: Icons.search_off,
         title: strings.noResultsTitle,

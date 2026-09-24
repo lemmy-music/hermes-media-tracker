@@ -131,14 +131,28 @@ class _FakeOpenLibrary extends OpenLibraryClient {
     this.results = const <BookResult>[],
     this.searchError,
     this.details,
+    this.isbnResult,
+    this.isbnError,
   }) : super(httpClient: MockClient((_) async => http.Response('{}', 200)));
 
   final List<BookResult> results;
   final String? searchError;
   final BookDetails? details;
 
+  /// Returned by [lookupByIsbn]; `null` simulates "no book for this ISBN".
+  final BookResult? isbnResult;
+
+  /// When set, [lookupByIsbn] throws an [OpenLibraryException] with this text.
+  final String? isbnError;
+
   final List<String> queries = [];
   final List<AppLanguage?> languages = [];
+
+  /// The (normalized) ISBNs passed to [lookupByIsbn].
+  final List<String> isbnQueries = [];
+
+  /// The `language` argument of every [lookupByIsbn] call.
+  final List<AppLanguage?> isbnLanguages = [];
 
   @override
   Future<List<BookResult>> search(
@@ -154,11 +168,24 @@ class _FakeOpenLibrary extends OpenLibraryClient {
   }
 
   @override
+  Future<BookResult?> lookupByIsbn(String isbn, {AppLanguage? language}) async {
+    isbnQueries.add(isbn);
+    isbnLanguages.add(language);
+    final error = isbnError;
+    if (error != null) throw OpenLibraryException(error);
+    return isbnResult;
+  }
+
+  @override
   Future<BookDetails> fetchDetails(
     String workKey, {
     AppLanguage? language,
   }) async {
-    return details ?? BookDetails(key: workKey, title: results.first.title);
+    return details ??
+        BookDetails(
+          key: workKey,
+          title: results.isEmpty ? '' : results.first.title,
+        );
   }
 }
 
@@ -584,5 +611,218 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Retry'), findsOneWidget);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // ISBN text search (phase 6a)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const String validIsbn = '978-0-306-40615-7';
+  const String normalizedIsbn = '9780306406157';
+
+  testWidgets('the search field hints that an ISBN can be typed', (
+    tester,
+  ) async {
+    await _pumpSearch(tester, tmdb: _FakeTmdb());
+    expect(find.text('Tip: you can also enter an ISBN.'), findsOneWidget);
+  });
+
+  testWidgets('a valid ISBN runs the ISBN lookup on the Books scope', (
+    tester,
+  ) async {
+    final tmdb = _FakeTmdb(results: const [_hit]);
+    final books = _FakeOpenLibrary(
+      results: const [_bookHit],
+      isbnResult: _bookHit,
+    );
+    await _pumpSearch(tester, tmdb: tmdb, books: books);
+
+    await tester.tap(find.text('Books'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), validIsbn);
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    // The normalized ISBN was looked up, the title search was skipped.
+    expect(books.isbnQueries, [normalizedIsbn]);
+    expect(books.queries, isEmpty);
+    // The lookup marker is visible.
+    expect(find.text('ISBN lookup'), findsOneWidget);
+    // The hit renders like any other book hit.
+    expect(find.text('The Lord of the Rings'), findsOneWidget);
+    expect(find.text('Book'), findsOneWidget);
+    expect(find.text('by J.R.R. Tolkien'), findsOneWidget);
+  });
+
+  testWidgets('the All scope runs the ISBN lookup and never queries TMDB', (
+    tester,
+  ) async {
+    final tmdb = _FakeTmdb(results: const [_hit]);
+    final books = _FakeOpenLibrary(
+      results: const [_bookHit],
+      isbnResult: _bookHit,
+    );
+    await _pumpSearch(tester, tmdb: tmdb, books: books);
+
+    await tester.enterText(find.byType(TextField), validIsbn);
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(books.isbnQueries, [normalizedIsbn]);
+    expect(tmdb.queries, isEmpty);
+    expect(find.text('ISBN lookup'), findsOneWidget);
+    expect(find.text('The Lord of the Rings'), findsOneWidget);
+  });
+
+  testWidgets('the ISBN lookup gets the active app language', (tester) async {
+    final books = _FakeOpenLibrary(isbnResult: _bookHit);
+    await _pumpSearch(
+      tester,
+      tmdb: _FakeTmdb(),
+      books: books,
+      settings: SettingsProvider(), // German
+    );
+
+    await tester.enterText(find.byType(TextField), validIsbn);
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(books.isbnLanguages, [AppLanguage.de]);
+  });
+
+  testWidgets('a number with a broken check digit is a normal search', (
+    tester,
+  ) async {
+    final tmdb = _FakeTmdb();
+    final books = _FakeOpenLibrary();
+    await _pumpSearch(tester, tmdb: tmdb, books: books);
+
+    await tester.tap(find.text('Books'));
+    await tester.pumpAndSettle();
+
+    // Valid length, wrong check digit → not an ISBN → plain title search.
+    await tester.enterText(find.byType(TextField), '9780306406158');
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(books.isbnQueries, isEmpty);
+    expect(books.queries, ['9780306406158']);
+    expect(find.text('ISBN lookup'), findsNothing);
+  });
+
+  testWidgets('the Movies scope ignores an ISBN and searches TMDB', (
+    tester,
+  ) async {
+    final tmdb = _FakeTmdb(results: const [_hit]);
+    final books = _FakeOpenLibrary(isbnResult: _bookHit);
+    await _pumpSearch(tester, tmdb: tmdb, books: books);
+
+    await tester.tap(find.text('Movies'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), validIsbn);
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(books.isbnQueries, isEmpty);
+    expect(tmdb.queries, [validIsbn]);
+    expect(find.text('ISBN lookup'), findsNothing);
+  });
+
+  testWidgets('an ISBN without a hit shows the localized not-found message', (
+    tester,
+  ) async {
+    final books = _FakeOpenLibrary(); // isbnResult == null → not found
+    await _pumpSearch(tester, tmdb: _FakeTmdb(), books: books);
+
+    await tester.enterText(find.byType(TextField), validIsbn);
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(books.isbnQueries, [normalizedIsbn]);
+    expect(find.text('No book found for this ISBN'), findsOneWidget);
+    expect(find.textContaining(normalizedIsbn), findsOneWidget);
+    // Not the generic "no results" state.
+    expect(find.text('No results'), findsNothing);
+  });
+
+  testWidgets('a failing ISBN lookup surfaces the OpenLibrary message', (
+    tester,
+  ) async {
+    final books = _FakeOpenLibrary(
+      isbnError: 'Could not reach OpenLibrary. Check your connection.',
+    );
+    await _pumpSearch(tester, tmdb: _FakeTmdb(), books: books);
+
+    await tester.enterText(find.byType(TextField), validIsbn);
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Search failed'), findsOneWidget);
+    expect(
+      find.text('Could not reach OpenLibrary. Check your connection.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('the book detail sheet adds an ISBN hit to the library', (
+    tester,
+  ) async {
+    final repository = _FakeRepository();
+    final books = _FakeOpenLibrary(
+      results: const [_bookHit],
+      details: _bookDetails,
+      isbnResult: _bookHit,
+    );
+    await _pumpSearch(
+      tester,
+      tmdb: _FakeTmdb(),
+      books: books,
+      repository: repository,
+    );
+
+    await tester.enterText(find.byType(TextField), validIsbn);
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('The Lord of the Rings'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Add to library'), findsOneWidget);
+    expect(find.text('1216 pages'), findsOneWidget);
+
+    await tester.tap(find.text('Add to library'));
+    await tester.pumpAndSettle();
+
+    expect(repository.insertCount, 1);
+    final item = repository.lastInserted!;
+    expect(item.kind, MediaKind.book);
+    expect(item.externalSource, 'openlibrary');
+    // Work-level key so the add dedups against a later title search.
+    expect(item.externalId, '/works/OL27448W');
+    expect(find.text('Already in your library'), findsOneWidget);
+  });
+
+  testWidgets('German ISBN UI is localized', (tester) async {
+    final books = _FakeOpenLibrary(); // not found
+    await _pumpSearch(
+      tester,
+      tmdb: _FakeTmdb(),
+      books: books,
+      settings: SettingsProvider(),
+    );
+
+    expect(
+      find.text('Tipp: Du kannst auch eine ISBN eingeben.'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(TextField), validIsbn);
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ISBN-Suche'), findsOneWidget);
+    expect(find.text('Kein Buch zu dieser ISBN gefunden'), findsOneWidget);
   });
 }

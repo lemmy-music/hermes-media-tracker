@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import '../l10n/app_language.dart';
 import '../l10n/app_strings.dart';
 import '../models/book_result.dart';
+import '../models/json_utils.dart';
+import 'isbn.dart';
 
 /// An OpenLibrary failure translated into a message safe to show the user.
 class OpenLibraryException implements Exception {
@@ -127,17 +129,19 @@ class OpenLibraryClient {
   /// `works/<key>.json` — `description` (string **or** object) plus a
   /// `first_sentence` fallback.
   ///
-  /// [workKey] accepts both `/works/OL27448W` and a bare `OL27448W`.
+  /// [workKey] accepts `/works/OL27448W`, `/books/OL7353617M` (an edition, see
+  /// [lookupByIsbn]) or a bare `OL27448W` / `OL7353617M`. The bare form is
+  /// routed by its suffix: `…M` is an edition, everything else a work.
   Future<BookDetails> fetchDetails(String workKey, {AppLanguage? language}) {
-    return _getBook('/${_workPath(workKey)}.json', language: language);
+    return _getBook('/${_bookPath(workKey)}.json', language: language);
   }
 
-  /// `isbn/<isbn>.json` — an **edition**; used by the Phase 6 barcode scanner.
+  /// `isbn/<isbn>.json` — an **edition**; kept as a low-level helper.
   ///
-  /// There is no UI yet, the method exists so the scanner can be wired up
-  /// without touching this client.
+  /// The endpoint 302-redirects to `/books/OL…M.json` and the payload carries
+  /// no author names, which is why the UI uses [lookupByIsbn] instead.
   Future<BookDetails> fetchByIsbn(String isbn, {AppLanguage? language}) {
-    final clean = isbn.replaceAll(RegExp(r'[^0-9Xx]'), '').toUpperCase();
+    final clean = cleanIsbn(isbn);
     if (clean.isEmpty) {
       throw OpenLibraryException(
         AppStrings(language ?? this.language).openLibraryNotFound,
@@ -146,11 +150,108 @@ class OpenLibraryClient {
     return _getBook('/isbn/$clean.json', language: language);
   }
 
-  /// Normalizes a work key / id to a `works/…` path segment.
-  static String _workPath(String workKey) {
-    final trimmed = workKey.trim().replaceAll(RegExp(r'^/+'), '');
-    if (trimmed.startsWith('works/')) return trimmed;
+  /// Looks up a book by ISBN for the search UI (Phase 6a, text entry).
+  ///
+  /// **Edition vs. work:** `/isbn/<isbn>.json` resolves to an *edition*
+  /// (`/books/OL…M`), not a work (`/works/OL…W`). The app stores books per
+  /// **work** (see [BookDetails] / `BookResult.toMediaItem`), so we read the
+  /// edition's linked work key (`works[0].key`) and return a work-level
+  /// [BookResult] — exactly the shape a normal title search yields. The tile,
+  /// the detail sheet and "Add to library" therefore work unchanged, and
+  /// `external_id` stays a work key so an ISBN add also dedups against a later
+  /// title search. Only when an edition has no linked work do we fall back to
+  /// the edition key (still loadable via [fetchDetails]).
+  ///
+  /// The edition payload has no author names, so they are enriched with one
+  /// best-effort `q=isbn:…` search call; a failure there is non-fatal (the
+  /// result simply has no author line).
+  ///
+  /// Returns `null` when OpenLibrary has no book for this ISBN (HTTP 404 or an
+  /// edition without a title). Network / timeout / server errors still throw an
+  /// [OpenLibraryException] so the caller can distinguish "not found" from
+  /// "could not ask".
+  Future<BookResult?> lookupByIsbn(String isbn, {AppLanguage? language}) async {
+    final clean = cleanIsbn(isbn);
+    if (clean.isEmpty) return null;
+
+    Map<String, dynamic> edition;
+    try {
+      edition = await _get('/isbn/$clean.json', language: language);
+    } on OpenLibraryException catch (error) {
+      if (error.statusCode == 404) return null;
+      rethrow;
+    }
+
+    final title = jsonString(edition['title'])?.trim();
+    if (title == null || title.isEmpty) return null;
+
+    // Reuse the tolerant edition parser for cover / pages / year / ISBNs.
+    final parsed = BookDetails.fromJson(edition);
+
+    final workKey = _firstRelationKey(edition['works']);
+    final editionKey = jsonString(edition['key']);
+
+    // Author names live on the work, not on the edition — enrich tolerantly.
+    var authors = const <String>[];
+    try {
+      final hits = await search('isbn:$clean', limit: 1, language: language);
+      if (hits.isNotEmpty) authors = hits.first.authors;
+    } on OpenLibraryException {
+      // Non-fatal: the edition alone is a usable result.
+    }
+
+    final isbns = <String>[
+      clean,
+      ...parsed.isbns.where((isbn) => isbn != clean),
+    ];
+
+    return BookResult(
+      key: workKey != null
+          ? '/works/$workKey'
+          : (editionKey ?? '/books/$clean'),
+      title: title,
+      authors: authors,
+      firstPublishYear: parsed.firstPublishYear,
+      coverId: parsed.coverId,
+      languages: _relationKeys(edition['languages']),
+      isbns: isbns,
+      pageCount: parsed.pageCount,
+    );
+  }
+
+  /// Normalizes a work / edition key to a `works/…` or `books/…` path segment.
+  static String _bookPath(String key) {
+    final trimmed = key.trim().replaceAll(RegExp(r'^/+'), '');
+    if (trimmed.startsWith('works/') || trimmed.startsWith('books/')) {
+      return trimmed;
+    }
+    // Bare OpenLibrary ids: `OL…M` is an edition, `OL…W` (and anything else)
+    // a work.
+    if (RegExp(r'^OL\d+M$').hasMatch(trimmed)) return 'books/$trimmed';
     return 'works/$trimmed';
+  }
+
+  /// The bare key of the first `{key: /…}` entry of an OpenLibrary relation
+  /// list (used for `works`, `languages`), or `null`.
+  static String? _firstRelationKey(Object? value) {
+    final keys = _relationKeys(value);
+    return keys.isEmpty ? null : keys.first;
+  }
+
+  /// Bare keys (last path segment) of an OpenLibrary relation list such as
+  /// `[{"key": "/languages/eng"}]` → `["eng"]`.
+  static List<String> _relationKeys(Object? value) {
+    if (value is! List) return const <String>[];
+    final keys = <String>[];
+    for (final entry in value) {
+      Object? raw;
+      if (entry is Map) raw = entry['key'];
+      raw ??= entry;
+      final text = jsonString(raw);
+      if (text == null || text.isEmpty) continue;
+      keys.add(text.split('/').last);
+    }
+    return keys;
   }
 
   Future<BookDetails> _getBook(String path, {AppLanguage? language}) async {

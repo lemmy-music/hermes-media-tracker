@@ -100,6 +100,29 @@ void main() {
     }
   });
 
+  test('ISBN search strings are available in both languages', () {
+    const de = AppStrings(AppLanguage.de);
+    const en = AppStrings(AppLanguage.en);
+
+    final pairs = <(String, String)>[
+      (de.searchIsbnHint, en.searchIsbnHint),
+      (de.isbnLookupLabel, en.isbnLookupLabel),
+      (de.isbnNotFoundTitle, en.isbnNotFoundTitle),
+      (
+        de.isbnNotFoundMessage('9780306406157'),
+        en.isbnNotFoundMessage('9780306406157'),
+      ),
+    ];
+    for (final (german, english) in pairs) {
+      expect(german.trim(), isNotEmpty);
+      expect(english.trim(), isNotEmpty);
+      expect(german, isNot(english));
+    }
+    // The not-found message carries the ISBN it was looking for.
+    expect(de.isbnNotFoundMessage('9780306406157'), contains('9780306406157'));
+    expect(en.isbnNotFoundMessage('9780306406157'), contains('9780306406157'));
+  });
+
   test('parameterized strings inject the value', () {
     expect(
       AppStrings(AppLanguage.en).sentLinkTo('me@example.com'),

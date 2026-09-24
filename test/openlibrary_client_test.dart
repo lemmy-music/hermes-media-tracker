@@ -315,6 +315,125 @@ void main() {
     });
   });
 
+  group('OpenLibraryClient.lookupByIsbn', () {
+    const Map<String, dynamic> edition = {
+      'key': '/books/OL37509862M',
+      'title': 'The Hobbit',
+      'works': [
+        {'key': '/works/OL27482W'},
+      ],
+      'covers': [12649317],
+      'number_of_pages': 310,
+      'publish_date': '2009',
+      'isbn_13': ['9780261102217'],
+      'isbn_10': ['0261102214'],
+      'languages': [
+        {'key': '/languages/eng'},
+      ],
+    };
+
+    test('resolves the edition to a work-level BookResult', () async {
+      final paths = <String>[];
+      final client = _client((request) async {
+        paths.add(request.url.path);
+        if (request.url.path == '/search.json') {
+          return _json({
+            'docs': [
+              {
+                'key': '/works/OL27482W',
+                'title': 'The Hobbit',
+                'author_name': ['J.R.R. Tolkien'],
+              },
+            ],
+          });
+        }
+        return _json(edition);
+      });
+
+      final result = await client.lookupByIsbn('978-0-261-10221-7');
+
+      expect(result, isNotNull);
+      // Edition key → the linked work, so `external_id` stays a work key.
+      expect(result!.key, '/works/OL27482W');
+      expect(result.title, 'The Hobbit');
+      // Author names are not on the edition; enriched from the ISBN search.
+      expect(result.authors, ['J.R.R. Tolkien']);
+      expect(result.firstPublishYear, 2009);
+      expect(result.pageCount, 310);
+      expect(result.coverId, 12649317);
+      expect(result.isbn, '9780261102217');
+      expect(result.languages, ['eng']);
+      expect(paths, contains('/isbn/9780261102217.json'));
+    });
+
+    test('keeps the edition result when the author enrichment fails', () async {
+      final client = _client((request) async {
+        if (request.url.path == '/search.json') {
+          return _json({}, status: 500);
+        }
+        return _json(edition);
+      });
+
+      final result = await client.lookupByIsbn('9780261102217');
+      expect(result, isNotNull);
+      expect(result!.key, '/works/OL27482W');
+      expect(result.authors, isEmpty);
+    });
+
+    test('falls back to the edition key when no work is linked', () async {
+      final client = _client((request) async {
+        if (request.url.path == '/search.json') {
+          return _json({'docs': <dynamic>[]});
+        }
+        return _json({'key': '/books/OL1M', 'title': 'Standalone Edition'});
+      });
+
+      final result = await client.lookupByIsbn('9780000000002');
+      expect(result, isNotNull);
+      expect(result!.key, '/books/OL1M');
+      expect(result.title, 'Standalone Edition');
+    });
+
+    test('returns null for an unknown ISBN (404)', () async {
+      final client = _client((_) async => _json({}, status: 404));
+      expect(await client.lookupByIsbn('9780000000000'), isNull);
+    });
+
+    test('returns null when the edition has no title', () async {
+      final client = _client((_) async => _json({'key': '/books/OL2M'}));
+      expect(await client.lookupByIsbn('9780000000002'), isNull);
+    });
+
+    test('returns null for empty input without calling the API', () async {
+      final client = _client(
+        (_) async => throw StateError('should not be called'),
+      );
+      expect(await client.lookupByIsbn('---'), isNull);
+    });
+
+    test('still propagates network failures', () async {
+      final client = _client((_) async => _json({}, status: 500));
+      await expectLater(
+        client.lookupByIsbn('9780261102217'),
+        throwsA(isA<OpenLibraryException>()),
+      );
+    });
+
+    test('fetchDetails routes an edition key to /books/…', () async {
+      late Uri requestUri;
+      final client = _client((request) async {
+        requestUri = request.url;
+        return _json({'title': 'X'});
+      });
+
+      await client.fetchDetails('/books/OL1M');
+      expect(requestUri.path, '/books/OL1M.json');
+
+      await client.fetchDetails('OL2M');
+      expect(requestUri.path, '/books/OL2M.json');
+    });
+  });
+
   group('OpenLibraryClient error handling', () {
     test('maps an HTTP error and keeps the status code', () async {
       final client = _client((_) async => _json({}, status: 500));

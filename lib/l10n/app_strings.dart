@@ -227,6 +227,21 @@ class AppStrings {
   String byAuthors(String authors) =>
       _tParam('byAuthors', {'authors': authors});
 
+  // ── Phase 6a: ISBN text search ─────────────────────────────────────────────
+
+  /// Subtle helper under the search field: it also accepts an ISBN.
+  String get searchIsbnHint => _t('searchIsbnHint');
+
+  /// Label shown while the current query is treated as an ISBN lookup.
+  String get isbnLookupLabel => _t('isbnLookupLabel');
+
+  /// Title of the "no book for this ISBN" empty state.
+  String get isbnNotFoundTitle => _t('isbnNotFoundTitle');
+
+  /// Body of the "no book for this ISBN" empty state — injects the ISBN.
+  String isbnNotFoundMessage(String isbn) =>
+      _tParam('isbnNotFoundMessage', {'isbn': isbn});
+
   // ───────────────────────────────────────────────────────────────────────────
   // stats
   // ───────────────────────────────────────────────────────────────────────────
@@ -671,6 +686,13 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'addedToLibrary': 'Zur Bibliothek hinzugefügt',
     'bookNoDescription': 'Keine Beschreibung verfügbar.',
     'byAuthors': 'von {authors}',
+    // ISBN text search (phase 6a)
+    'searchIsbnHint': 'Tipp: Du kannst auch eine ISBN eingeben.',
+    'isbnLookupLabel': 'ISBN-Suche',
+    'isbnNotFoundTitle': 'Kein Buch zu dieser ISBN gefunden',
+    'isbnNotFoundMessage':
+        'OpenLibrary hat zu ISBN {isbn} kein Buch gefunden. Prüfe die Nummer '
+        'oder such nach dem Titel.',
     // stats
     'statsComingSoon': 'Statistik folgt bald',
     'statsDescription':
@@ -928,6 +950,13 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'addedToLibrary': 'Added to library',
     'bookNoDescription': 'No description available.',
     'byAuthors': 'by {authors}',
+    // ISBN text search (phase 6a)
+    'searchIsbnHint': 'Tip: you can also enter an ISBN.',
+    'isbnLookupLabel': 'ISBN lookup',
+    'isbnNotFoundTitle': 'No book found for this ISBN',
+    'isbnNotFoundMessage':
+        'OpenLibrary found no book for ISBN {isbn}. Check the number or '
+        'search by title.',
     // stats
     'statsComingSoon': 'Stats coming soon',
     'statsDescription': 'Track how much you watch and read over time.',
