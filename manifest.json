@@ -1,11 +1,11 @@
 {
-    "name": "Media Tracker",
-    "short_name": "Media Tracker",
+    "name": "iwatched",
+    "short_name": "iwatched",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Personal tracker for movies, series and books.",
+    "description": "iwatched — personal tracker for movies, series and books.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
