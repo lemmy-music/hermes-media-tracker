@@ -769,4 +769,181 @@ void main() {
       expect(repo.episodeMetadataUpserts, isEmpty);
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // bulk catch-up rules + write paths (Feature: "Massen-Nachtrag")
+  // ───────────────────────────────────────────────────────────────────────────
+
+  group('catch-up rules', () {
+    Episode ep(int season, int number, {bool watched = false}) => Episode(
+      id: 'ep-$season-$number',
+      mediaItemId: 'series-1',
+      seasonNumber: season,
+      episodeNumber: number,
+      watched: watched,
+    );
+
+    test('lists only earlier, still-unwatched episodes of the same season', () {
+      final episodes = [
+        ep(1, 1),
+        ep(1, 2, watched: true),
+        ep(1, 3),
+        ep(1, 4, watched: true),
+      ];
+
+      final previous = previousUnwatchedEpisodes(episodes, ep(1, 4));
+
+      expect(previous.map((e) => e.episodeNumber), <int>[1, 3]);
+    });
+
+    test('ignores later episodes and never reaches into earlier seasons', () {
+      final episodes = [ep(1, 9), ep(2, 1), ep(2, 2), ep(2, 3)];
+
+      final previous = previousUnwatchedEpisodes(episodes, ep(2, 3));
+
+      expect(previous.map((e) => e.episodeNumber), <int>[1, 2]);
+      // Season 1's open episode is deliberately out of scope (documented).
+      expect(previous.every((e) => e.seasonNumber == 2), isTrue);
+    });
+
+    test('is empty when nothing earlier is still open (no prompt)', () {
+      final episodes = [ep(1, 1, watched: true), ep(1, 2, watched: true)];
+
+      expect(previousUnwatchedEpisodes(episodes, ep(1, 2)), isEmpty);
+    });
+
+    test('the first episode of a season has no earlier episodes', () {
+      final episodes = [ep(1, 1), ep(1, 2)];
+
+      expect(previousUnwatchedEpisodes(episodes, ep(1, 1)), isEmpty);
+    });
+
+    test('seasons with open episodes are collected once, ascending', () {
+      final episodes = [
+        ep(1, 1),
+        ep(1, 2),
+        ep(2, 1),
+        ep(2, 2, watched: true),
+        ep(3, 1),
+      ];
+
+      expect(previousSeasonsWithUnwatched(episodes, 3), <int>[1, 2]);
+    });
+
+    test('the first / only season never prompts', () {
+      final episodes = [ep(1, 1), ep(1, 2), ep(2, 1)];
+
+      expect(previousSeasonsWithUnwatched(episodes, 1), isEmpty);
+      expect(previousSeasonsWithUnwatched(<Episode>[ep(1, 1)], 1), isEmpty);
+    });
+
+    test('fully watched earlier seasons never prompt', () {
+      final episodes = [
+        ep(1, 1, watched: true),
+        ep(1, 2, watched: true),
+        ep(2, 1),
+      ];
+
+      expect(previousSeasonsWithUnwatched(episodes, 2), isEmpty);
+    });
+  });
+
+  group('LibraryProvider catch-up writes', () {
+    List<Episode> twoSeasons() => [
+      for (var i = 1; i <= 3; i++)
+        Episode(
+          id: 'ep-1-$i',
+          mediaItemId: 'series-1',
+          seasonNumber: 1,
+          episodeNumber: i,
+        ),
+      for (var i = 1; i <= 2; i++)
+        Episode(
+          id: 'ep-2-$i',
+          mediaItemId: 'series-1',
+          seasonNumber: 2,
+          episodeNumber: i,
+        ),
+    ];
+
+    test(
+      'markEpisodesWatched stamps every episode and derives progress',
+      () async {
+        final repo = _FakeRepo(items: [_series()], episodes: twoSeasons());
+        final provider = _provider(repo, _FakeSeriesTmdb(), now: now);
+        await provider.load();
+        await provider.ensureEpisodes(provider.items.single);
+
+        final all = provider.episodesFor('series-1');
+        final target = all.firstWhere(
+          (e) => e.seasonNumber == 2 && e.episodeNumber == 2,
+        );
+        final previous = previousUnwatchedEpisodes(all, target);
+        await provider.setEpisodeWatched(provider.items.single, target, true);
+        await provider.markEpisodesWatched(provider.items.single, previous);
+
+        // The tapped episode first, then the earlier one it caught up.
+        expect(repo.watchedCalls, <String>['ep-2-2:true', 'ep-2-1:true']);
+        expect(
+          provider.episodesFor('series-1').where((e) => e.watched).length,
+          2,
+        );
+        expect(repo.trackingWrites.last['progress_percent'], 40);
+        expect(repo.trackingWrites.last['status'], 'in_progress');
+      },
+    );
+
+    test(
+      'markSeasonWatched(includePreviousSeasons) completes the series',
+      () async {
+        final repo = _FakeRepo(items: [_series()], episodes: twoSeasons());
+        final provider = _provider(repo, _FakeSeriesTmdb(), now: now);
+        await provider.load();
+        await provider.ensureEpisodes(provider.items.single);
+
+        await provider.markSeasonWatched(
+          provider.items.single,
+          2,
+          includePreviousSeasons: true,
+        );
+
+        expect(
+          provider.episodesFor('series-1').every((e) => e.watched),
+          isTrue,
+        );
+        expect(repo.trackingWrites.last['progress_percent'], 100);
+        expect(repo.trackingWrites.last['status'], 'completed');
+        expect(repo.trackingWrites.last['completed_at'], isoDateTime(now));
+      },
+    );
+
+    test('without the flag earlier seasons stay untouched', () async {
+      final repo = _FakeRepo(items: [_series()], episodes: twoSeasons());
+      final provider = _provider(repo, _FakeSeriesTmdb(), now: now);
+      await provider.load();
+      await provider.ensureEpisodes(provider.items.single);
+
+      await provider.markSeasonWatched(provider.items.single, 2);
+
+      final seasonOne = provider
+          .episodesFor('series-1')
+          .where((e) => e.seasonNumber == 1);
+      expect(seasonOne.every((e) => !e.watched), isTrue);
+      expect(repo.trackingWrites.last['progress_percent'], 40);
+      expect(repo.trackingWrites.last['status'], 'in_progress');
+    });
+
+    test('markAllEpisodesWatched marks every season', () async {
+      final repo = _FakeRepo(items: [_series()], episodes: twoSeasons());
+      final provider = _provider(repo, _FakeSeriesTmdb(), now: now);
+      await provider.load();
+      await provider.ensureEpisodes(provider.items.single);
+
+      await provider.markAllEpisodesWatched(provider.items.single);
+
+      expect(provider.episodesFor('series-1').every((e) => e.watched), isTrue);
+      expect(repo.trackingWrites.last['progress_percent'], 100);
+      expect(repo.trackingWrites.last['status'], 'completed');
+    });
+  });
 }

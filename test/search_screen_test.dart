@@ -6,7 +6,9 @@ import 'package:http/testing.dart';
 import 'package:media_tracker/l10n/app_language.dart';
 import 'package:media_tracker/main.dart';
 import 'package:media_tracker/models/book_result.dart';
+import 'package:media_tracker/models/episode.dart';
 import 'package:media_tracker/models/media_item.dart';
+import 'package:media_tracker/models/reading_log_entry.dart';
 import 'package:media_tracker/models/tmdb_result.dart';
 import 'package:media_tracker/providers/auth_provider.dart';
 import 'package:media_tracker/providers/settings_provider.dart';
@@ -32,8 +34,13 @@ class _FakeAuth extends AuthProvider {
 }
 
 /// Repository stub: an empty library and configurable duplicate handling.
+///
+/// Also supports the "add as watched" flow: an in-memory episode store plus a
+/// tracking/reading-log recorder, so the real [LibraryProvider] write paths can
+/// run against it (no Supabase, no network).
 class _FakeRepository extends MediaRepository {
-  _FakeRepository({this.existing});
+  _FakeRepository({this.existing, List<Episode> episodes = const <Episode>[]})
+    : episodes = List<Episode>.of(episodes);
 
   /// Returned by [findByExternal] — non-null simulates "already tracked".
   MediaItem? existing;
@@ -45,6 +52,15 @@ class _FakeRepository extends MediaRepository {
 
   /// When set, [insert] throws a [MediaRepositoryException] with this text.
   String? insertError;
+
+  /// In-memory episode store (keyed by `media_item_id`).
+  List<Episode> episodes;
+
+  /// Every tracking write (as the fields map that was sent).
+  final List<Map<String, dynamic>> trackingWrites = <Map<String, dynamic>>[];
+
+  /// Every reading-log payload that was written.
+  final List<Map<String, dynamic>> readingLogs = <Map<String, dynamic>>[];
 
   @override
   Future<List<MediaItem>> fetchAll() async => const <MediaItem>[];
@@ -60,6 +76,64 @@ class _FakeRepository extends MediaRepository {
     if (error != null) throw MediaRepositoryException(error);
     return item.copyWith(id: 'new-id');
   }
+
+  @override
+  Future<MediaItem> updateTracking(
+    String id,
+    Map<String, dynamic> fields,
+  ) async {
+    trackingWrites.add(fields);
+    final base =
+        lastInserted ??
+        const MediaItem(id: 'new-id', kind: MediaKind.movie, title: '');
+    final row = Map<String, dynamic>.from(base.toMap())
+      ..['id'] = id
+      ..addAll(fields);
+    return MediaItem.fromMap(row);
+  }
+
+  @override
+  Future<ReadingLogEntry> insertReadingLog({
+    required String mediaItemId,
+    required int pages,
+    DateTime? loggedAt,
+  }) async {
+    readingLogs.add(<String, dynamic>{
+      'media_item_id': mediaItemId,
+      'pages': pages,
+    });
+    return ReadingLogEntry(
+      mediaItemId: mediaItemId,
+      pages: pages,
+      loggedAt: loggedAt,
+    );
+  }
+
+  @override
+  Future<List<Episode>> fetchEpisodes(String mediaItemId) async =>
+      episodes.where((episode) => episode.mediaItemId == mediaItemId).toList();
+
+  @override
+  Future<List<Episode>> markSeasonWatched(
+    String mediaItemId,
+    int seasonNumber,
+  ) async {
+    final updated = <Episode>[];
+    for (var i = 0; i < episodes.length; i++) {
+      final episode = episodes[i];
+      if (episode.mediaItemId != mediaItemId ||
+          episode.seasonNumber != seasonNumber) {
+        continue;
+      }
+      final next = episode.copyWith(
+        watched: true,
+        watchedAt: DateTime.utc(2026, 1, 1),
+      );
+      episodes[i] = next;
+      updated.add(next);
+    }
+    return updated;
+  }
 }
 
 /// Metadata client stub — no network.
@@ -68,6 +142,8 @@ class _FakeTmdb extends TmdbClient {
     this.enabled = true,
     this.results = const <TmdbSearchResult>[],
     this.searchError,
+    this.tvSeasons = const <int, int>{},
+    this.failTv = false,
   }) : super(
          httpClient: MockClient((_) async => http.Response('{}', 200)),
          token: 'fake',
@@ -76,6 +152,12 @@ class _FakeTmdb extends TmdbClient {
   final bool enabled;
   final List<TmdbSearchResult> results;
   final String? searchError;
+
+  /// Season number → episode count for the TV details stub (`_tvHit`).
+  final Map<int, int> tvSeasons;
+
+  /// When `true`, [fetchTv] throws — simulates a failed episode load.
+  final bool failTv;
 
   final List<String> queries = [];
 
@@ -104,6 +186,29 @@ class _FakeTmdb extends TmdbClient {
     TmdbSearchResult result, {
     String? language,
   }) async {
+    if (result.type == TmdbMediaType.tv) {
+      final seasons = tvSeasons.entries.toList()
+        ..sort((a, b) => a.key.compareTo(b.key));
+      return TmdbTvDetails(
+        id: result.id,
+        name: result.title,
+        originalName: result.originalTitle,
+        year: result.year,
+        numberOfSeasons: tvSeasons.isEmpty ? null : tvSeasons.length,
+        numberOfEpisodes: tvSeasons.isEmpty
+            ? null
+            : tvSeasons.values.fold<int>(0, (a, b) => a + b),
+        seasons: [
+          for (final entry in seasons)
+            TmdbSeasonSummary(
+              seasonNumber: entry.key,
+              name: 'Season ${entry.key}',
+              episodeCount: entry.value,
+            ),
+        ],
+        overview: result.overview,
+      );
+    }
     return TmdbMovieDetails(
       id: result.id,
       title: result.title,
@@ -112,6 +217,13 @@ class _FakeTmdb extends TmdbClient {
       runtime: 148,
       overview: result.overview,
     );
+  }
+
+  /// The lazy episode loader fetches this — [failTv] simulates a failed load.
+  @override
+  Future<TmdbTvDetails> fetchTv(int id, {String? language}) async {
+    if (failTv) throw const TmdbException('TMDB request failed.');
+    return super.fetchTv(id, language: language);
   }
 }
 
@@ -123,6 +235,29 @@ const TmdbSearchResult _hit = TmdbSearchResult(
   year: 2010,
   overview: 'A thief who steals corporate secrets.',
 );
+
+/// A series hit — drives the "mark as watched" series flow.
+const TmdbSearchResult _tvHit = TmdbSearchResult(
+  id: 9001,
+  type: TmdbMediaType.tv,
+  title: 'Lost',
+  originalTitle: 'Lost',
+  year: 2004,
+  overview: 'Stranded on an island.',
+);
+
+/// Seeds [count] episodes of season 1 for [mediaItemId].
+List<Episode> _episodesFor(String mediaItemId, int count) => <Episode>[
+  for (var i = 1; i <= count; i++)
+    Episode(
+      id: 'ep-1-$i',
+      mediaItemId: mediaItemId,
+      seasonNumber: 1,
+      episodeNumber: i,
+      name: 'Episode $i',
+      runtime: 42,
+    ),
+];
 
 /// Book client stub — no network. Records the requested languages so the
 /// German ranking parameter can be asserted.
@@ -324,15 +459,15 @@ void main() {
     await tester.tap(find.text('Inception'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Add to library'), findsOneWidget);
+    expect(find.text('Add to watchlist'), findsOneWidget);
     expect(find.text('148 min'), findsOneWidget);
 
-    await tester.tap(find.text('Add to library'));
+    await tester.tap(find.text('Add to watchlist'));
     await tester.pumpAndSettle();
 
     expect(repository.insertCount, 1);
     expect(find.text('Already in your library'), findsOneWidget);
-    expect(find.text('Add to library'), findsNothing);
+    expect(find.text('Add to watchlist'), findsNothing);
   });
 
   testWidgets('detail sheet shows a duplicate as already tracked', (
@@ -361,7 +496,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Already in your library'), findsOneWidget);
-    expect(find.text('Add to library'), findsNothing);
+    expect(find.text('Add to watchlist'), findsNothing);
   });
 
   testWidgets('German UI queries TMDB with de-DE', (tester) async {
@@ -403,7 +538,7 @@ void main() {
     await tester.tap(find.text('Inception'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Zur Bibliothek hinzufügen'), findsOneWidget);
+    expect(find.text('Zur Watchlist'), findsOneWidget);
     expect(find.text('148 Min.'), findsOneWidget);
   });
 
@@ -542,9 +677,9 @@ void main() {
 
     expect(find.text('A quest to destroy a ring.'), findsOneWidget);
     expect(find.text('1216 pages'), findsOneWidget);
-    expect(find.text('Add to library'), findsOneWidget);
+    expect(find.text('Add to watchlist'), findsOneWidget);
 
-    await tester.tap(find.text('Add to library'));
+    await tester.tap(find.text('Add to watchlist'));
     await tester.pumpAndSettle();
 
     expect(repository.insertCount, 1);
@@ -588,7 +723,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Already in your library'), findsOneWidget);
-    expect(find.text('Add to library'), findsNothing);
+    expect(find.text('Add to watchlist'), findsNothing);
   });
 
   testWidgets('a failing book search surfaces the OpenLibrary message', (
@@ -789,10 +924,10 @@ void main() {
     await tester.tap(find.text('The Lord of the Rings'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Add to library'), findsOneWidget);
+    expect(find.text('Add to watchlist'), findsOneWidget);
     expect(find.text('1216 pages'), findsOneWidget);
 
-    await tester.tap(find.text('Add to library'));
+    await tester.tap(find.text('Add to watchlist'));
     await tester.pumpAndSettle();
 
     expect(repository.insertCount, 1);
@@ -824,5 +959,156 @@ void main() {
 
     expect(find.text('ISBN-Suche'), findsOneWidget);
     expect(find.text('Kein Buch zu dieser ISBN gefunden'), findsOneWidget);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // two add actions: "Add to watchlist" vs "Mark as watched"
+  // ───────────────────────────────────────────────────────────────────────────
+
+  group('add as watched from a search hit', () {
+    const String watched = 'Mark as watched';
+
+    Future<void> openHit(
+      WidgetTester tester,
+      String query,
+      String title,
+    ) async {
+      await tester.enterText(find.byType(TextField), query);
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(title));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a movie hit offers both actions', (tester) async {
+      await _pumpSearch(tester, tmdb: _FakeTmdb(results: const [_hit]));
+      await openHit(tester, 'inception', 'Inception');
+
+      expect(find.text('Add to watchlist'), findsOneWidget);
+      expect(find.text(watched), findsOneWidget);
+    });
+
+    testWidgets('a movie is added completed at 100 %', (tester) async {
+      final repository = _FakeRepository();
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(results: const [_hit]),
+        repository: repository,
+      );
+      await openHit(tester, 'inception', 'Inception');
+
+      await tester.tap(find.text(watched));
+      await tester.pumpAndSettle();
+
+      expect(repository.insertCount, 1);
+      final fields = repository.trackingWrites.last;
+      expect(fields['status'], 'completed');
+      expect(fields['progress_percent'], 100);
+      expect(fields['completed_at'], isNotNull);
+      expect(find.text('Marked as watched'), findsOneWidget);
+    });
+
+    testWidgets('a book is completed and logs the full page jump', (
+      tester,
+    ) async {
+      final repository = _FakeRepository();
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(),
+        books: _FakeOpenLibrary(
+          results: const [_bookHit],
+          details: _bookDetails,
+        ),
+        repository: repository,
+      );
+      await tester.tap(find.text('Books'));
+      await tester.pumpAndSettle();
+      await openHit(tester, 'lotr', 'The Lord of the Rings');
+
+      await tester.tap(find.text(watched));
+      await tester.pumpAndSettle();
+
+      final fields = repository.trackingWrites.last;
+      expect(fields['status'], 'completed');
+      expect(fields['progress_percent'], 100);
+      expect(fields['progress_current'], 1216);
+      // The page jump goes through the reading-log funnel, not a direct write.
+      expect(repository.readingLogs, hasLength(1));
+      expect(repository.readingLogs.single['pages'], 1216);
+      expect(find.text('Marked as watched'), findsOneWidget);
+    });
+
+    testWidgets('a series loads its episodes and marks them all watched', (
+      tester,
+    ) async {
+      final repository = _FakeRepository(episodes: _episodesFor('new-id', 3));
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(
+          results: const [_tvHit],
+          tvSeasons: const <int, int>{1: 3},
+        ),
+        repository: repository,
+      );
+      await openHit(tester, 'lost', 'Lost');
+
+      await tester.tap(find.text(watched));
+      await tester.pumpAndSettle();
+
+      expect(repository.insertCount, 1);
+      expect(repository.episodes.every((e) => e.watched), isTrue);
+      final fields = repository.trackingWrites.last;
+      expect(fields['status'], 'completed');
+      expect(fields['progress_percent'], 100);
+      expect(find.text('Marked as watched'), findsOneWidget);
+    });
+
+    testWidgets('a failed episode load keeps the series in the watchlist', (
+      tester,
+    ) async {
+      final repository = _FakeRepository();
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(results: const [_tvHit], failTv: true),
+        repository: repository,
+      );
+      await openHit(tester, 'lost', 'Lost');
+
+      await tester.tap(find.text(watched));
+      await tester.pumpAndSettle();
+
+      expect(repository.insertCount, 1);
+      // Deliberately kept as `planned` — never a half-finished "completed".
+      expect(repository.lastInserted?.status, MediaStatus.planned);
+      expect(repository.trackingWrites, isEmpty);
+      expect(
+        find.text(
+          'Could not load the episodes. The item stays in your watchlist.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an already tracked entry shows no actions', (tester) async {
+      final repository = _FakeRepository(
+        existing: const MediaItem(
+          id: 'existing',
+          kind: MediaKind.movie,
+          title: 'Inception',
+          externalSource: 'tmdb',
+          externalId: '27205',
+        ),
+      );
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(results: const [_hit]),
+        repository: repository,
+      );
+      await openHit(tester, 'inception', 'Inception');
+
+      expect(find.text('Already in your library'), findsOneWidget);
+      expect(find.text('Add to watchlist'), findsNothing);
+      expect(find.text(watched), findsNothing);
+    });
   });
 }

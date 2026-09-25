@@ -307,22 +307,116 @@ class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
     }
   }
 
-  Future<void> _toggleEpisode(Episode episode, bool watched) => _run(
-    () => context.read<LibraryProvider>().setEpisodeWatched(
-      item,
+  /// Toggles an episode's watched state.
+  ///
+  /// Checking an episode **on** additionally offers the catch-up prompt when
+  /// the same season still has earlier open episodes
+  /// ([previousUnwatchedEpisodes]). Removing a check never prompts.
+  Future<void> _toggleEpisode(Episode episode, bool watched) async {
+    if (!watched) {
+      await _run(
+        () => context.read<LibraryProvider>().setEpisodeWatched(
+          item,
+          episode,
+          false,
+        ),
+      );
+      return;
+    }
+
+    // The dialog is decided *before* the tap is applied, then the tap is
+    // persisted first so dismissing the dialog can never lose the check.
+    final library = context.read<LibraryProvider>();
+    final previous = previousUnwatchedEpisodes(
+      library.episodesFor(item.id),
       episode,
-      watched,
-    ),
-  );
+    );
+
+    await _run(
+      () => context.read<LibraryProvider>().setEpisodeWatched(
+        item,
+        episode,
+        true,
+      ),
+    );
+    if (previous.isEmpty || !mounted) return;
+
+    final confirmed = await _confirmCatchUpEpisodes(previous.length);
+    if (confirmed != true || !mounted) return;
+    await _run(
+      () => context.read<LibraryProvider>().markEpisodesWatched(item, previous),
+    );
+  }
+
+  /// Asks whether the earlier open episodes of the season should be marked too.
+  Future<bool?> _confirmCatchUpEpisodes(int count) {
+    final strings = AppStrings.read(context);
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.catchUpEpisodesTitle),
+        content: Text(strings.catchUpEpisodesMessage(count)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(strings.catchUpOnlyThis),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.catchUpConfirmAll),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _markSeason(int seasonNumber) async {
+    final library = context.read<LibraryProvider>();
+    final previous = previousSeasonsWithUnwatched(
+      library.episodesFor(item.id),
+      seasonNumber,
+    );
+
+    // Only prompt when an earlier season still has open episodes.
+    var includePrevious = false;
+    if (previous.isNotEmpty) {
+      final confirmed = await _confirmCatchUpSeasons(previous.length);
+      includePrevious = confirmed == true;
+    }
+    if (!mounted) return;
+
     final messenger = ScaffoldMessenger.of(context);
     final strings = AppStrings.read(context);
     await _run(
-      () =>
-          context.read<LibraryProvider>().markSeasonWatched(item, seasonNumber),
+      () => library.markSeasonWatched(
+        item,
+        seasonNumber,
+        includePreviousSeasons: includePrevious,
+      ),
     );
     messenger.showSnackBar(SnackBar(content: Text(strings.seasonWatchedDone)));
+  }
+
+  /// Asks whether earlier seasons with open episodes should be marked too.
+  Future<bool?> _confirmCatchUpSeasons(int count) {
+    final strings = AppStrings.read(context);
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(strings.catchUpSeasonsTitle),
+        content: Text(strings.catchUpSeasonsMessage(count)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(strings.catchUpOnlyThisSeason),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(strings.catchUpConfirmAll),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _resetSeason(int seasonNumber) async {

@@ -1096,6 +1096,194 @@ void main() {
       expect(inDetail(find.text('Abgeschlossen am')), findsOneWidget);
     });
   });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // bulk catch-up prompts (episode & season level)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  group('series catch-up prompts', () {
+    List<Episode> twoSeasons({
+      int season1 = 2,
+      int season2 = 3,
+      int watched1 = 0,
+    }) => <Episode>[
+      ..._episodes(
+        'series-1',
+        seasonNumber: 1,
+        count: season1,
+        watched: watched1,
+      ),
+      ..._episodes('series-1', seasonNumber: 2, count: season2),
+    ];
+
+    Future<void> openSeason2(WidgetTester tester, _FakeRepo repository) async {
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+      );
+      await tester.tap(inDetail(find.text('Season 2')));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'checking an episode offers to catch up the open predecessors',
+      (tester) async {
+        final repository = _FakeRepo([_series()], episodes: twoSeasons());
+        await openSeason2(tester, repository);
+
+        await tester.tap(
+          find.byKey(MediaDetailScreen.episodeCheckboxKey(2, 3)),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Catch up earlier episodes?'), findsOneWidget);
+        expect(find.textContaining('2 episodes'), findsOneWidget);
+
+        await tester.tap(find.text('Yes, all before'));
+        await tester.pumpAndSettle();
+
+        final season2 = repository.episodes
+            .where((e) => e.seasonNumber == 2)
+            .toList();
+        expect(season2.every((e) => e.watched), isTrue);
+        // Season 1 is out of scope at the episode level.
+        expect(
+          repository.episodes
+              .where((e) => e.seasonNumber == 1)
+              .every((e) => !e.watched),
+          isTrue,
+        );
+      },
+    );
+
+    testWidgets('"Only this one" marks just the tapped episode', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([_series()], episodes: twoSeasons());
+      await openSeason2(tester, repository);
+
+      await tester.tap(find.byKey(MediaDetailScreen.episodeCheckboxKey(2, 3)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Only this one'));
+      await tester.pumpAndSettle();
+
+      final season2 = repository.episodes
+          .where((e) => e.seasonNumber == 2)
+          .toList();
+      expect(season2.where((e) => e.watched).length, 1);
+      expect(season2.firstWhere((e) => e.episodeNumber == 3).watched, isTrue);
+      expect(season2.firstWhere((e) => e.episodeNumber == 1).watched, isFalse);
+    });
+
+    testWidgets('the first episode of a season never prompts', (tester) async {
+      final repository = _FakeRepo([_series()], episodes: twoSeasons());
+      await openSeason2(tester, repository);
+
+      await tester.tap(find.byKey(MediaDetailScreen.episodeCheckboxKey(2, 1)));
+      await tester.pumpAndSettle();
+
+      // Nothing earlier in season 2 → no dialog (even though season 1 is open).
+      expect(find.text('Catch up earlier episodes?'), findsNothing);
+      expect(
+        repository.episodes
+            .where((e) => e.seasonNumber == 1)
+            .every((e) => !e.watched),
+        isTrue,
+      );
+      expect(
+        repository.episodes
+            .firstWhere((e) => e.seasonNumber == 2 && e.episodeNumber == 1)
+            .watched,
+        isTrue,
+      );
+    });
+
+    testWidgets('removing a check never prompts', (tester) async {
+      final repository = _FakeRepo([
+        _series(),
+      ], episodes: _episodes('series-1', count: 3, watched: 2));
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+      );
+
+      await tester.tap(find.byKey(MediaDetailScreen.episodeCheckboxKey(1, 2)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Catch up earlier episodes?'), findsNothing);
+      expect(
+        repository.episodes.firstWhere((e) => e.episodeNumber == 2).watched,
+        isFalse,
+      );
+    });
+
+    testWidgets('marking a season offers to catch up earlier seasons', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([_series()], episodes: twoSeasons());
+      await openSeason2(tester, repository);
+
+      await tester.tap(find.byKey(MediaDetailScreen.markSeasonWatchedKey));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Catch up earlier seasons?'), findsOneWidget);
+      expect(find.textContaining('1 season)'), findsOneWidget);
+
+      await tester.tap(find.text('Yes, all before'));
+      await tester.pumpAndSettle();
+
+      expect(repository.episodes.every((e) => e.watched), isTrue);
+    });
+
+    testWidgets('"Only this season" leaves earlier seasons untouched', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([_series()], episodes: twoSeasons());
+      await openSeason2(tester, repository);
+
+      await tester.tap(find.byKey(MediaDetailScreen.markSeasonWatchedKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Only this season'));
+      await tester.pumpAndSettle();
+
+      expect(
+        repository.episodes
+            .where((e) => e.seasonNumber == 1)
+            .every((e) => !e.watched),
+        isTrue,
+      );
+      expect(
+        repository.episodes
+            .where((e) => e.seasonNumber == 2)
+            .every((e) => e.watched),
+        isTrue,
+      );
+    });
+
+    testWidgets('no prompt when the earlier seasons are already complete', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([
+        _series(),
+      ], episodes: twoSeasons(watched1: 2));
+      await openSeason2(tester, repository);
+
+      await tester.tap(find.byKey(MediaDetailScreen.markSeasonWatchedKey));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Catch up earlier seasons?'), findsNothing);
+      expect(
+        repository.episodes
+            .where((e) => e.seasonNumber == 2)
+            .every((e) => e.watched),
+        isTrue,
+      );
+    });
+  });
 }
 
 /// Opens the library (the app start tab) without entering a detail — used by

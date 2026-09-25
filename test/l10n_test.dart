@@ -16,7 +16,8 @@ void main() {
       expect(de.search, 'Suche');
       expect(de.stats, 'Statistik');
       expect(de.settings, 'Einstellungen');
-      expect(de.addToLibrary, 'Zur Bibliothek hinzufügen');
+      expect(de.addToWatchlist, 'Zur Watchlist');
+      expect(de.addAsWatched, 'Schon gesehen');
       expect(de.alreadyInLibrary, 'Bereits in deiner Bibliothek');
       expect(de.libraryEmptyTitle, 'Deine Bibliothek ist leer');
       expect(de.sendMagicLink, 'Anmelde-Link senden');
@@ -43,7 +44,8 @@ void main() {
 
     test('keeps the original copy', () {
       expect(en.library, 'Library');
-      expect(en.addToLibrary, 'Add to library');
+      expect(en.addToWatchlist, 'Add to watchlist');
+      expect(en.addAsWatched, 'Mark as watched');
       expect(en.alreadyInLibrary, 'Already in your library');
       expect(en.sendMagicLink, 'Send magic link');
     });
@@ -345,6 +347,45 @@ void main() {
         en.libraryStatusFilterLabel(LibraryStatusFilter.completed),
         'Completed',
       );
+    });
+  });
+
+  group('bulk catch-up / add-as-watched strings', () {
+    const de = AppStrings(AppLanguage.de);
+    const en = AppStrings(AppLanguage.en);
+
+    test('both actions are localized and distinguishable', () {
+      expect(de.addToWatchlist, 'Zur Watchlist');
+      expect(de.addAsWatched, 'Schon gesehen');
+      expect(en.addToWatchlist, 'Add to watchlist');
+      expect(en.addAsWatched, 'Mark as watched');
+      expect(de.addToWatchlist, isNot(de.addAsWatched));
+      expect(en.addToWatchlist, isNot(en.addAsWatched));
+    });
+
+    test('the catch-up dialogs are plural-aware in both languages', () {
+      expect(de.catchUpEpisodesMessage(1), contains('1 Folge'));
+      expect(de.catchUpEpisodesMessage(3), contains('3 Folgen'));
+      expect(en.catchUpEpisodesMessage(1), contains('1 episode'));
+      expect(en.catchUpEpisodesMessage(3), contains('3 episodes'));
+      expect(de.catchUpSeasonsMessage(2), contains('2 Staffeln'));
+      expect(en.catchUpSeasonsMessage(2), contains('2 seasons'));
+
+      final pairs = <(String, String)>[
+        (de.catchUpEpisodesTitle, en.catchUpEpisodesTitle),
+        (de.catchUpSeasonsTitle, en.catchUpSeasonsTitle),
+        (de.catchUpConfirmAll, en.catchUpConfirmAll),
+        (de.catchUpOnlyThis, en.catchUpOnlyThis),
+        (de.catchUpOnlyThisSeason, en.catchUpOnlyThisSeason),
+        (de.addAsWatchedDone, en.addAsWatchedDone),
+        (de.addAsWatchedEpisodesError, en.addAsWatchedEpisodesError),
+        (de.addedToWatchlist, en.addedToWatchlist),
+      ];
+      for (final (german, english) in pairs) {
+        expect(german.trim(), isNotEmpty);
+        expect(english.trim(), isNotEmpty);
+        expect(german, isNot(english));
+      }
     });
   });
 }

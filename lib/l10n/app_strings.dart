@@ -216,9 +216,56 @@ class AppStrings {
   String get noResultsTitle => _t('noResultsTitle');
   String get noResultsMessage => _t('noResultsMessage');
   String get searchMissingToken => _t('searchMissingToken');
-  String get addToLibrary => _t('addToLibrary');
+
+  /// Detail-sheet action: add the hit to the watchlist (`planned`).
+  String get addToWatchlist => _t('addToWatchlist');
+
+  /// Detail-sheet action: add the hit directly as watched / completed.
+  String get addAsWatched => _t('addAsWatched');
+
   String get alreadyInLibrary => _t('alreadyInLibrary');
-  String get addedToLibrary => _t('addedToLibrary');
+
+  /// Snack bar after [addToWatchlist].
+  String get addedToWatchlist => _t('addedToWatchlist');
+
+  /// Snack bar after [addAsWatched].
+  String get addAsWatchedDone => _t('addAsWatchedDone');
+
+  /// Snack bar when adding as watched failed for an unknown reason.
+  String get addAsWatchedError => _t('addAsWatchedError');
+
+  /// Error while loading a series' episodes for [addAsWatched]: the entry
+  /// deliberately stays in the watchlist instead of being left half-finished.
+  String get addAsWatchedEpisodesError => _t('addAsWatchedEpisodesError');
+
+  // ── bulk catch-up prompts ("Massen-Nachtrag") ──────────────────────────────
+
+  /// Title of the per-episode catch-up dialog.
+  String get catchUpEpisodesTitle => _t('catchUpEpisodesTitle');
+
+  /// Body of the per-episode catch-up dialog — plural-aware, names the count.
+  String catchUpEpisodesMessage(int count) => _tParam(
+    count == 1 ? 'catchUpEpisodesOne' : 'catchUpEpisodesMany',
+    {'count': '$count'},
+  );
+
+  /// Title of the season-level catch-up dialog.
+  String get catchUpSeasonsTitle => _t('catchUpSeasonsTitle');
+
+  /// Body of the season-level catch-up dialog — plural-aware, names the count.
+  String catchUpSeasonsMessage(int count) => _tParam(
+    count == 1 ? 'catchUpSeasonsOne' : 'catchUpSeasonsMany',
+    {'count': '$count'},
+  );
+
+  /// Confirm action of a catch-up dialog ("Yes, all before").
+  String get catchUpConfirmAll => _t('catchUpConfirmAll');
+
+  /// Decline action of the per-episode catch-up dialog.
+  String get catchUpOnlyThis => _t('catchUpOnlyThis');
+
+  /// Decline action of the season-level catch-up dialog.
+  String get catchUpOnlyThisSeason => _t('catchUpOnlyThisSeason');
 
   /// Teaser shown for a book hit without a description.
   String get bookNoDescription => _t('bookNoDescription');
@@ -681,9 +728,28 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
         'Die Suche ist nicht verfügbar: In diesem Build ist kein '
         'TMDB-Token konfiguriert. Baue die App mit '
         '--dart-define=TMDB_TOKEN=…. neu.',
-    'addToLibrary': 'Zur Bibliothek hinzufügen',
+    'addToWatchlist': 'Zur Watchlist',
+    'addAsWatched': 'Schon gesehen',
     'alreadyInLibrary': 'Bereits in deiner Bibliothek',
-    'addedToLibrary': 'Zur Bibliothek hinzugefügt',
+    'addedToWatchlist': 'Zur Watchlist hinzugefügt',
+    'addAsWatchedDone': 'Als gesehen hinzugefügt',
+    'addAsWatchedError': 'Konnte nicht als gesehen hinzugefügt werden.',
+    'addAsWatchedEpisodesError':
+        'Folgen konnten nicht geladen werden. Der Eintrag bleibt in deiner '
+        'Watchlist.',
+    // bulk catch-up prompts ("Massen-Nachtrag")
+    'catchUpEpisodesTitle': 'Vorherige Folgen abhaken?',
+    'catchUpEpisodesOne':
+        'Auch die vorherige Folge dieser Staffel abhaken? (1 Folge)',
+    'catchUpEpisodesMany':
+        'Auch die vorherigen Folgen dieser Staffel abhaken? ({count} Folgen)',
+    'catchUpSeasonsTitle': 'Vorherige Staffeln abhaken?',
+    'catchUpSeasonsOne': 'Auch die vorherige Staffel abhaken? (1 Staffel)',
+    'catchUpSeasonsMany':
+        'Auch die vorherigen Staffeln abhaken? ({count} Staffeln)',
+    'catchUpConfirmAll': 'Ja, alle davor',
+    'catchUpOnlyThis': 'Nur diese',
+    'catchUpOnlyThisSeason': 'Nur diese Staffel',
     'bookNoDescription': 'Keine Beschreibung verfügbar.',
     'byAuthors': 'von {authors}',
     // ISBN text search (phase 6a)
@@ -945,9 +1011,29 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'searchMissingToken':
         'Search is unavailable: this build has no TMDB token configured. '
         'Rebuild the app with --dart-define=TMDB_TOKEN=….',
-    'addToLibrary': 'Add to library',
+    'addToWatchlist': 'Add to watchlist',
+    'addAsWatched': 'Mark as watched',
     'alreadyInLibrary': 'Already in your library',
-    'addedToLibrary': 'Added to library',
+    'addedToWatchlist': 'Added to watchlist',
+    'addAsWatchedDone': 'Marked as watched',
+    'addAsWatchedError': 'Could not add as watched.',
+    'addAsWatchedEpisodesError':
+        'Could not load the episodes. The item stays in your watchlist.',
+    // bulk catch-up prompts
+    'catchUpEpisodesTitle': 'Catch up earlier episodes?',
+    'catchUpEpisodesOne':
+        'Also mark the earlier episode of this season as watched? '
+        '(1 episode)',
+    'catchUpEpisodesMany':
+        'Also mark the earlier episodes of this season as watched? '
+        '({count} episodes)',
+    'catchUpSeasonsTitle': 'Catch up earlier seasons?',
+    'catchUpSeasonsOne': 'Also mark the earlier season as watched? (1 season)',
+    'catchUpSeasonsMany':
+        'Also mark the earlier seasons as watched? ({count} seasons)',
+    'catchUpConfirmAll': 'Yes, all before',
+    'catchUpOnlyThis': 'Only this one',
+    'catchUpOnlyThisSeason': 'Only this season',
     'bookNoDescription': 'No description available.',
     'byAuthors': 'by {authors}',
     // ISBN text search (phase 6a)

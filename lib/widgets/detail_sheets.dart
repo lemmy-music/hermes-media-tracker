@@ -5,6 +5,7 @@ import '../l10n/app_strings.dart';
 import '../models/book_result.dart';
 import '../models/media_item.dart';
 import '../models/tmdb_result.dart';
+import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../repositories/media_repository.dart';
 import '../services/openlibrary_client.dart';
@@ -29,9 +30,12 @@ class TmdbDetailSheet extends StatefulWidget {
 class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
   TmdbDetails? _details;
   bool _loading = true;
-  bool _adding = false;
+  bool _watchlistBusy = false;
+  bool _watchedBusy = false;
   bool _added = false;
   String? _error;
+
+  bool get _busy => _watchlistBusy || _watchedBusy;
 
   @override
   void initState() {
@@ -79,38 +83,89 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
     }
   }
 
-  Future<void> _add() async {
+  /// Adds the hit to the watchlist (`planned`) — the classic "add".
+  Future<void> _addToWatchlist() async {
     final details = _details;
-    if (details == null || _adding) return;
+    if (details == null || _busy) return;
 
     final messenger = ScaffoldMessenger.of(context);
     final repository = context.read<MediaRepository>();
     final strings = AppStrings.read(context);
 
-    setState(() => _adding = true);
+    setState(() => _watchlistBusy = true);
     try {
       await repository.insert(details.toMediaItem());
       if (!mounted) return;
       setState(() {
         _added = true;
-        _adding = false;
+        _watchlistBusy = false;
       });
-      messenger.showSnackBar(SnackBar(content: Text(strings.addedToLibrary)));
+      messenger.showSnackBar(SnackBar(content: Text(strings.addedToWatchlist)));
     } on MediaRepositoryException catch (error) {
+      _handleAddFailure(error, messenger, strings, () {
+        _added = isAlreadyInLibraryError(error);
+        _watchlistBusy = false;
+      });
+    }
+  }
+
+  /// Adds the hit **directly as watched** (movie → `completed`; series → all
+  /// episodes marked watched through the lazy loader + episode automation).
+  Future<void> _addAsWatched() async {
+    final details = _details;
+    if (details == null || _busy) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final repository = context.read<MediaRepository>();
+    final library = context.read<LibraryProvider>();
+    final strings = AppStrings.read(context);
+
+    setState(() => _watchedBusy = true);
+    try {
+      final result = await insertAsWatched(
+        repository,
+        library,
+        details.toMediaItem(),
+      );
       if (!mounted) return;
-      final alreadyInLibrary = isAlreadyInLibraryError(error);
       setState(() {
-        _added = alreadyInLibrary;
-        _adding = false;
+        _added = true;
+        _watchedBusy = false;
       });
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            alreadyInLibrary ? strings.alreadyInLibrary : error.message,
+            result == AddAsWatchedResult.keepInWatchlist
+                ? strings.addAsWatchedEpisodesError
+                : strings.addAsWatchedDone,
           ),
         ),
       );
+    } on MediaRepositoryException catch (error) {
+      _handleAddFailure(error, messenger, strings, () {
+        _added = isAlreadyInLibraryError(error);
+        _watchedBusy = false;
+      });
     }
+  }
+
+  /// Shared failure handling of both add actions: a duplicate flips the sheet
+  /// into the "already in your library" state, anything else is shown as-is.
+  void _handleAddFailure(
+    MediaRepositoryException error,
+    ScaffoldMessengerState messenger,
+    AppStrings strings,
+    void Function() applyState,
+  ) {
+    final alreadyInLibrary = isAlreadyInLibraryError(error);
+    if (mounted) setState(applyState);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          alreadyInLibrary ? strings.alreadyInLibrary : error.message,
+        ),
+      ),
+    );
   }
 
   @override
@@ -206,7 +261,13 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
       );
     }
 
-    return _AddAction(added: _added, adding: _adding, onAdd: _add);
+    return _AddActions(
+      added: _added,
+      watchlistBusy: _watchlistBusy,
+      watchedBusy: _watchedBusy,
+      onWatchlist: _addToWatchlist,
+      onWatched: _addAsWatched,
+    );
   }
 }
 
@@ -227,9 +288,12 @@ class BookDetailSheet extends StatefulWidget {
 class _BookDetailSheetState extends State<BookDetailSheet> {
   BookDetails? _details;
   bool _loading = true;
-  bool _adding = false;
+  bool _watchlistBusy = false;
+  bool _watchedBusy = false;
   bool _added = false;
   String? _error;
+
+  bool get _busy => _watchlistBusy || _watchedBusy;
 
   @override
   void initState() {
@@ -273,46 +337,98 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
     }
   }
 
-  Future<void> _add() async {
+  /// Builds the [MediaItem] for this book from the (lazily loaded) details.
+  MediaItem _buildItem(BookDetails details) => widget.result.toMediaItem(
+    description: details.description,
+    totalPages: details.pageCount,
+    isbn: details.isbn,
+    coverUrl: details.coverUrl,
+    releaseYear: details.firstPublishYear,
+  );
+
+  /// Adds the book to the watchlist (`planned`) — the classic "add".
+  Future<void> _addToWatchlist() async {
     final details = _details;
-    if (details == null || _adding) return;
+    if (details == null || _busy) return;
 
     final messenger = ScaffoldMessenger.of(context);
     final repository = context.read<MediaRepository>();
     final strings = AppStrings.read(context);
 
-    setState(() => _adding = true);
+    setState(() => _watchlistBusy = true);
     try {
-      await repository.insert(
-        widget.result.toMediaItem(
-          description: details.description,
-          totalPages: details.pageCount,
-          isbn: details.isbn,
-          coverUrl: details.coverUrl,
-          releaseYear: details.firstPublishYear,
-        ),
+      await repository.insert(_buildItem(details));
+      if (!mounted) return;
+      setState(() {
+        _added = true;
+        _watchlistBusy = false;
+      });
+      messenger.showSnackBar(SnackBar(content: Text(strings.addedToWatchlist)));
+    } on MediaRepositoryException catch (error) {
+      _handleAddFailure(error, messenger, strings, () {
+        _added = isAlreadyInLibraryError(error);
+        _watchlistBusy = false;
+      });
+    }
+  }
+
+  /// Adds the book **directly as read** (`completed`). When the page count is
+  /// known, the full page jump is logged through the reading-log funnel.
+  Future<void> _addAsWatched() async {
+    final details = _details;
+    if (details == null || _busy) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final repository = context.read<MediaRepository>();
+    final library = context.read<LibraryProvider>();
+    final strings = AppStrings.read(context);
+
+    setState(() => _watchedBusy = true);
+    try {
+      final result = await insertAsWatched(
+        repository,
+        library,
+        _buildItem(details),
       );
       if (!mounted) return;
       setState(() {
         _added = true;
-        _adding = false;
-      });
-      messenger.showSnackBar(SnackBar(content: Text(strings.addedToLibrary)));
-    } on MediaRepositoryException catch (error) {
-      if (!mounted) return;
-      final alreadyInLibrary = isAlreadyInLibraryError(error);
-      setState(() {
-        _added = alreadyInLibrary;
-        _adding = false;
+        _watchedBusy = false;
       });
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            alreadyInLibrary ? strings.alreadyInLibrary : error.message,
+            result == AddAsWatchedResult.keepInWatchlist
+                ? strings.addAsWatchedEpisodesError
+                : strings.addAsWatchedDone,
           ),
         ),
       );
+    } on MediaRepositoryException catch (error) {
+      _handleAddFailure(error, messenger, strings, () {
+        _added = isAlreadyInLibraryError(error);
+        _watchedBusy = false;
+      });
     }
+  }
+
+  /// Shared failure handling of both add actions: a duplicate flips the sheet
+  /// into the "already in your library" state, anything else is shown as-is.
+  void _handleAddFailure(
+    MediaRepositoryException error,
+    ScaffoldMessengerState messenger,
+    AppStrings strings,
+    void Function() applyState,
+  ) {
+    final alreadyInLibrary = isAlreadyInLibraryError(error);
+    if (mounted) setState(applyState);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          alreadyInLibrary ? strings.alreadyInLibrary : error.message,
+        ),
+      ),
+    );
   }
 
   @override
@@ -409,7 +525,13 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
       );
     }
 
-    return _AddAction(added: _added, adding: _adding, onAdd: _add);
+    return _AddActions(
+      added: _added,
+      watchlistBusy: _watchlistBusy,
+      watchedBusy: _watchedBusy,
+      onWatchlist: _addToWatchlist,
+      onWatched: _addAsWatched,
+    );
   }
 }
 
@@ -472,18 +594,79 @@ class _SheetFrame extends StatelessWidget {
   }
 }
 
-/// Initializes the add button: "Add to library", a spinner while adding, or the
-/// "Already in your library" confirmation.
-class _AddAction extends StatelessWidget {
-  const _AddAction({
+/// The outcome of an "add as watched" attempt.
+///
+/// [keepInWatchlist] means the item was inserted but could not be completed
+/// (a series whose episodes failed to load) — it deliberately stays in the
+/// watchlist instead of ending up half-finished, and the caller shows a
+/// localized message.
+enum AddAsWatchedResult { done, keepInWatchlist }
+
+/// Adds [item] to the library and tries to mark it watched straight away.
+///
+///  * **Movie / book:** inserted, then set to `completed` through the normal
+///    status automation ([LibraryProvider.setStatus]) — progress 100 %,
+///    `completed_at` filled; a book's page jump is logged via the existing
+///    reading-log funnel (never written directly).
+///  * **Series:** inserted, episodes loaded lazily ([LibraryProvider.ensureEpisodes]),
+///    then **every** episode marked watched — which derives `completed` / 100 %
+///    via the episode automation.
+///
+/// A series whose episodes cannot be loaded (or that simply has none) is left
+/// in the watchlist ([AddAsWatchedResult.keepInWatchlist]) — an explicit,
+/// documented trade-off: a *planned* entry the user can retry beats a broken
+/// one that claims to be complete without any watched episodes.
+Future<AddAsWatchedResult> insertAsWatched(
+  MediaRepository repository,
+  LibraryProvider library,
+  MediaItem item,
+) async {
+  final inserted = await repository.insert(item);
+  if (inserted.kind == MediaKind.series) {
+    await library.ensureEpisodes(inserted);
+    final episodes = library.episodesFor(inserted.id);
+    if (episodes.isEmpty) {
+      await library.load();
+      return AddAsWatchedResult.keepInWatchlist;
+    }
+    await library.markAllEpisodesWatched(inserted);
+  } else {
+    await library.setStatus(inserted, MediaStatus.completed);
+  }
+  await library.load();
+  return AddAsWatchedResult.done;
+}
+
+/// The two add actions of a detail sheet.
+///
+/// * "Add to watchlist" — the classic `planned` add.
+/// * "Mark as watched" — inserts and completes the item in one step.
+///
+/// While an action runs both buttons are disabled and the running one shows a
+/// spinner, so the user gets a visible loading state (important for a series,
+/// whose episode load can take a moment). Once the item is tracked, the
+/// actions are replaced by the "already in your library" confirmation.
+class _AddActions extends StatelessWidget {
+  const _AddActions({
     required this.added,
-    required this.adding,
-    required this.onAdd,
+    required this.watchlistBusy,
+    required this.watchedBusy,
+    required this.onWatchlist,
+    required this.onWatched,
   });
 
   final bool added;
-  final bool adding;
-  final VoidCallback onAdd;
+  final bool watchlistBusy;
+  final bool watchedBusy;
+  final VoidCallback onWatchlist;
+  final VoidCallback onWatched;
+
+  /// A spinner sized for use inside a button icon slot.
+  static const Widget _spinner = SizedBox(
+    width: 18,
+    height: 18,
+    child: CircularProgressIndicator(strokeWidth: 2),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -508,16 +691,24 @@ class _AddAction extends StatelessWidget {
       );
     }
 
-    return FilledButton.icon(
-      onPressed: adding ? null : onAdd,
-      icon: adding
-          ? const SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : const Icon(Icons.add),
-      label: Text(strings.addToLibrary),
+    final busy = watchlistBusy || watchedBusy;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OutlinedButton.icon(
+          onPressed: busy ? null : onWatchlist,
+          icon: watchlistBusy
+              ? _spinner
+              : const Icon(Icons.bookmark_add_outlined),
+          label: Text(strings.addToWatchlist),
+        ),
+        const SizedBox(height: 8),
+        FilledButton.icon(
+          onPressed: busy ? null : onWatched,
+          icon: watchedBusy ? _spinner : const Icon(Icons.check_circle_outline),
+          label: Text(strings.addAsWatched),
+        ),
+      ],
     );
   }
 }

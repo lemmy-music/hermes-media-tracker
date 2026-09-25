@@ -414,11 +414,73 @@ class LibraryProvider extends ChangeNotifier {
     await _persistDerived(item, episodesFor(itemId));
   }
 
-  /// Marks **every** episode of [seasonNumber] as watched.
-  Future<void> markSeasonWatched(MediaItem item, int seasonNumber) async {
+  /// Marks each episode of [episodes] as watched and persists the derived
+  /// series status / progress **once**.
+  ///
+  /// Backs the per-episode catch-up prompt ("also mark the earlier episodes of
+  /// this season"). Every episode goes through [MediaRepository.setWatched], so
+  /// it carries a fresh `watched_at`, exactly like a single check-off — the
+  /// automation is never bypassed. Already-watched episodes are skipped.
+  Future<void> markEpisodesWatched(
+    MediaItem item,
+    List<Episode> episodes,
+  ) async {
     final itemId = _requireId(item);
-    final updated = await _repository.markSeasonWatched(itemId, seasonNumber);
+    final updated = <Episode>[];
+    for (final episode in episodes) {
+      final episodeId = episode.id;
+      if (episodeId == null || episode.watched) continue;
+      updated.add(await _repository.setWatched(episodeId, true));
+    }
+    if (updated.isEmpty) return;
     _mergeEpisodes(itemId, updated);
+    await _persistDerived(item, episodesFor(itemId));
+  }
+
+  /// Marks **every** episode of [seasonNumber] as watched.
+  ///
+  /// When [includePreviousSeasons] is set, every earlier season that still has
+  /// an unwatched episode ([previousSeasonsWithUnwatched]) is marked watched
+  /// first — the season-level catch-up prompt. Both paths go through
+  /// [MediaRepository.markSeasonWatched] and the derived series state is
+  /// persisted once, so progress / status / timestamps stay consistent.
+  Future<void> markSeasonWatched(
+    MediaItem item,
+    int seasonNumber, {
+    bool includePreviousSeasons = false,
+  }) async {
+    final itemId = _requireId(item);
+    final merged = <Episode>[];
+    if (includePreviousSeasons) {
+      final previous = previousSeasonsWithUnwatched(
+        episodesFor(itemId),
+        seasonNumber,
+      );
+      for (final season in previous) {
+        merged.addAll(await _repository.markSeasonWatched(itemId, season));
+      }
+    }
+    merged.addAll(await _repository.markSeasonWatched(itemId, seasonNumber));
+    if (merged.isEmpty) return;
+    _mergeEpisodes(itemId, merged);
+    await _persistDerived(item, episodesFor(itemId));
+  }
+
+  /// Marks **every** episode of [item] (across all its seasons) as watched.
+  ///
+  /// Backs "add as watched" for a series: once the episodes are loaded
+  /// ([ensureEpisodes]), each season is marked watched and the derived series
+  /// state is persisted — so the series ends up `completed` with 100 % via the
+  /// normal automation, never by writing the status directly.
+  Future<void> markAllEpisodesWatched(MediaItem item) async {
+    final itemId = _requireId(item);
+    final seasons = seasonsFor(itemId);
+    final merged = <Episode>[];
+    for (final season in seasons) {
+      merged.addAll(await _repository.markSeasonWatched(itemId, season));
+    }
+    if (merged.isEmpty) return;
+    _mergeEpisodes(itemId, merged);
     await _persistDerived(item, episodesFor(itemId));
   }
 

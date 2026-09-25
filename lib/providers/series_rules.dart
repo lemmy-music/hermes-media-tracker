@@ -18,6 +18,7 @@
 ///  * `completed_at` is stamped when every episode is checked off (if empty).
 library;
 
+import '../models/episode.dart';
 import '../models/json_utils.dart';
 import '../models/media_item.dart';
 
@@ -73,4 +74,52 @@ Map<String, dynamic> seriesDerivedFields(
   }
 
   return fields;
+}
+
+/// The still-unwatched episodes of the **same season** that come before
+/// [episode] (a lower `episodeNumber`), ascending.
+///
+/// Backs the per-episode catch-up prompt: when the user checks off an episode
+/// and the season still has earlier open episodes, the UI offers to mark them
+/// watched too. The returned list is exactly what "Ja, alle davor" writes, and
+/// an empty list means **no prompt** (there is nothing to do).
+///
+/// **Scope decision (documented):** the episode-level prompt only ever looks at
+/// earlier episodes of the *same* season. It never reaches back into earlier
+/// seasons — that is the job of the season-level [previousSeasonsWithUnwatched]
+/// prompt. Keeping the two scopes apart means a per-episode check can never
+/// silently mass-mark a whole earlier season.
+List<Episode> previousUnwatchedEpisodes(
+  List<Episode> episodes,
+  Episode episode,
+) {
+  final result = <Episode>[
+    for (final candidate in episodes)
+      if (candidate.seasonNumber == episode.seasonNumber &&
+          candidate.episodeNumber < episode.episodeNumber &&
+          !candidate.watched)
+        candidate,
+  ]..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+  return result;
+}
+
+/// The earlier seasons (`seasonNumber < [seasonNumber]`) that still contain at
+/// least one unwatched episode, ascending.
+///
+/// Backs the season-level catch-up prompt: when the user bulk-marks a season
+/// watched and a *previous* season still has open episodes, the UI offers to
+/// mark those seasons watched too. An empty list means **no prompt** — either
+/// this is the first season or every earlier season is already fully watched.
+///
+/// The number of entries is the count shown in the dialog ("N Staffeln").
+List<int> previousSeasonsWithUnwatched(
+  List<Episode> episodes,
+  int seasonNumber,
+) {
+  final seasons = <int>{
+    for (final episode in episodes)
+      if (episode.seasonNumber < seasonNumber && !episode.watched)
+        episode.seasonNumber,
+  }.toList()..sort();
+  return seasons;
 }
