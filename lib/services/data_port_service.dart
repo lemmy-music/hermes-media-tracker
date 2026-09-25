@@ -220,7 +220,7 @@ class DataPortService {
   /// Native: open a save dialog through `file_picker`.
   static Future<bool> _saveOnNative(String filename, Uint8List bytes) async {
     final uri = await FilePicker.saveFile(
-      dialogTitle: 'Media Tracker',
+      dialogTitle: 'iwatched',
       fileName: filename,
       bytes: bytes,
       mimeType: 'application/json',
@@ -303,7 +303,7 @@ class DataPortService {
   /// `withData`-style eager load is needed here.
   static Future<Uint8List?> _pickJsonBytes() async {
     final file = await FilePicker.pickFile(
-      dialogTitle: 'Media Tracker',
+      dialogTitle: 'iwatched',
       type: FileType.custom,
       allowedExtensions: const <String>['json'],
     );

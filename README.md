@@ -1,6 +1,8 @@
-# Media Tracker
+# iwatched
 
 A personal tracker for **movies, series and books** — search a title, add it to your library, and keep track of what you've watched or read.
+
+> The app is called **iwatched**. The repository (`hermes-media-tracker`) and the Dart package (`media_tracker`) keep their historical names — the GitHub Pages path is tied to the repo name and the package name is baked into every import.
 
 [![Build & Deploy to GitHub Pages](https://github.com/lemmy-music/hermes-media-tracker/actions/workflows/build-web.yml/badge.svg)](https://github.com/lemmy-music/hermes-media-tracker/actions/workflows/build-web.yml)
 

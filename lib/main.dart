@@ -91,7 +91,7 @@ class MediaTrackerApp extends StatelessWidget {
       ],
       child: Consumer<ThemeProvider>(
         builder: (_, theme, _) => MaterialApp(
-          title: 'Media Tracker',
+          title: 'iwatched',
           debugShowCheckedModeBanner: false,
           themeMode: theme.themeMode,
           theme: ThemeData(

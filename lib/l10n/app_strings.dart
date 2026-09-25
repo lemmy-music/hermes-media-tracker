@@ -63,7 +63,7 @@ class AppStrings {
   // ───────────────────────────────────────────────────────────────────────────
 
   /// Brand name — intentionally never translated.
-  String get appTitle => 'Media Tracker';
+  String get appTitle => 'iwatched';
 
   String get library => _t('library');
   String get search => _t('search');
@@ -860,7 +860,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'importErrorNotJsonObject':
         'Die Datei hat ein unerwartetes Format: Das oberste Element ist kein '
         'JSON-Objekt.',
-    'importErrorWrongFormat': 'Die Datei ist keine Media-Tracker-Sicherung.',
+    'importErrorWrongFormat': 'Die Datei ist keine iwatched-Sicherung.',
     'importErrorUnsupportedVersion':
         'Diese Version der Sicherungsdatei wird nicht unterstützt.',
     'importErrorMissingMediaItems':
@@ -1135,7 +1135,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'importErrorNotJsonObject':
         'The file has an unexpected format: the root element is not a JSON '
         'object.',
-    'importErrorWrongFormat': 'This file is not a Media Tracker backup.',
+    'importErrorWrongFormat': 'This file is not an iwatched backup.',
     'importErrorUnsupportedVersion':
         'This backup file version is not supported.',
     'importErrorMissingMediaItems':

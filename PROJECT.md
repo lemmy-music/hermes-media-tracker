@@ -1,6 +1,8 @@
-# Media Tracker — Project Brief
+# iwatched — Project Brief
 
 Personal tracker for **movies, series and books**. Mark what you've seen/read and keep optional progress.
+
+> **Naming:** the app is called **iwatched**. The repository (`hermes-media-tracker`) and the Dart package (`media_tracker`) keep their historical names — renaming them would break the GitHub Pages URL/`base href` and every `package:media_tracker/…` import.
 
 ## Product Vision (from Daniel, 2026-08-21)
 
