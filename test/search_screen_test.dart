@@ -1013,7 +1013,8 @@ void main() {
       expect(fields['status'], 'completed');
       expect(fields['progress_percent'], 100);
       expect(fields['completed_at'], isNotNull);
-      expect(find.text('Marked as watched'), findsOneWidget);
+      // The sheet's own "added" state is the confirmation now (no snack bar).
+      expect(find.text('Already watched'), findsOneWidget);
     });
 
     testWidgets('a book is completed and logs the full page jump', (
@@ -1043,7 +1044,8 @@ void main() {
       // The page jump goes through the reading-log funnel, not a direct write.
       expect(repository.readingLogs, hasLength(1));
       expect(repository.readingLogs.single['pages'], 1216);
-      expect(find.text('Marked as watched'), findsOneWidget);
+      // The sheet's own "added" state is the confirmation now (no snack bar).
+      expect(find.text('Already watched'), findsOneWidget);
     });
 
     testWidgets('a series loads its episodes and marks them all watched', (
@@ -1068,7 +1070,8 @@ void main() {
       final fields = repository.trackingWrites.last;
       expect(fields['status'], 'completed');
       expect(fields['progress_percent'], 100);
-      expect(find.text('Marked as watched'), findsOneWidget);
+      // The sheet's own "added" state is the confirmation now (no snack bar).
+      expect(find.text('Already watched'), findsOneWidget);
     });
 
     testWidgets('a failed episode load keeps the series in the watchlist', (
@@ -1146,7 +1149,7 @@ void main() {
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // instant adoption + opening the new entry from the snack bar
+  // instant adoption + opening the new entry from the sheet
   // ───────────────────────────────────────────────────────────────────────────
 
   group('an added hit shows up instantly and can be opened', () {
@@ -1208,7 +1211,7 @@ void main() {
       expect(repository.fetchCount, 1);
     });
 
-    testWidgets('the snack bar action opens the new item detail view', (
+    testWidgets('the open offer sits in the sheet and opens the new item', (
       tester,
     ) async {
       await _pumpSearch(
@@ -1220,18 +1223,20 @@ void main() {
 
       await tester.tap(find.text('Add to watchlist'));
       await tester.pumpAndSettle();
-      expect(find.text('Open'), findsOneWidget);
 
-      // The modal barrier covers the snack bar, so the action is tapped after
-      // the sheet was dismissed — exactly the real user flow.
-      await tester.tapAt(const Offset(5, 5));
-      await tester.pumpAndSettle();
+      // The sheet stays open (deliberate) and offers Open right in the visible
+      // state — not a snack bar (which would hide behind the modal barrier).
+      expect(find.byType(TmdbDetailSheet), findsOneWidget);
+      expect(find.text('Already in your library'), findsOneWidget);
+      expect(find.text('Open'), findsOneWidget);
+      expect(find.byType(SnackBarAction), findsNothing);
       expect(find.byKey(MediaDetailScreen.deleteButtonKey), findsNothing);
 
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
 
-      // The detail view of the right (just added) item is open.
+      // Sheet closed, detail view of the right (just added) item is open.
+      expect(find.byType(TmdbDetailSheet), findsNothing);
       expect(find.byKey(MediaDetailScreen.deleteButtonKey), findsOneWidget);
       expect(
         find.descendant(
@@ -1242,7 +1247,7 @@ void main() {
       );
     });
 
-    testWidgets('the snack bar action closes a still-open sheet first', (
+    testWidgets('mark as watched also offers Open inside the sheet', (
       tester,
     ) async {
       await _pumpSearch(
@@ -1252,23 +1257,61 @@ void main() {
       );
       await searchAndOpen(tester, 'inception', 'Inception');
 
-      await tester.tap(find.text('Add to watchlist'));
+      await tester.tap(find.text('Mark as watched'));
       await tester.pumpAndSettle();
 
-      // Invoke the action's callback directly: the modal barrier makes the
-      // snack bar un-tappable while the sheet is open, but the callback must
-      // still close the sheet in a controlled way instead of using a disposed
-      // context.
-      final action = tester.widget<SnackBarAction>(find.byType(SnackBarAction));
-      action.onPressed();
+      expect(find.byType(TmdbDetailSheet), findsOneWidget);
+      expect(find.text('Already watched'), findsOneWidget);
+      expect(find.text('Open'), findsOneWidget);
+      expect(find.byType(SnackBarAction), findsNothing);
+
+      await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
 
       expect(find.byType(TmdbDetailSheet), findsNothing);
-      expect(find.byKey(MediaDetailScreen.deleteButtonKey), findsOneWidget);
       expect(
         find.descendant(
           of: find.byType(MediaDetailScreen),
           matching: find.text('Inception'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the book sheet also offers Open in the sheet after an add', (
+      tester,
+    ) async {
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(),
+        books: _FakeOpenLibrary(
+          results: const [_bookHit],
+          details: _bookDetails,
+        ),
+        repository: _FakeRepository(),
+      );
+
+      await tester.tap(find.text('Books'));
+      await tester.pumpAndSettle();
+      await searchAndOpen(tester, 'lotr', 'The Lord of the Rings');
+
+      await tester.tap(find.text('Add to watchlist'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BookDetailSheet), findsOneWidget);
+      expect(find.text('Already in your library'), findsOneWidget);
+      expect(find.text('Open'), findsOneWidget);
+      expect(find.byType(SnackBarAction), findsNothing);
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(BookDetailSheet), findsNothing);
+      expect(find.byKey(MediaDetailScreen.deleteButtonKey), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(MediaDetailScreen),
+          matching: find.text('The Lord of the Rings'),
         ),
         findsOneWidget,
       );

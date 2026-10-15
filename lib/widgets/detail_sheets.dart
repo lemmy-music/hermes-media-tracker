@@ -38,6 +38,16 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
   /// Status of the already-tracked entry (when [_added] came from the library),
   /// so the sheet can say "Already watched" for a completed title.
   MediaStatus? _addedStatus;
+
+  /// The row stored by this sheet's own add (watchlist / watched) — the target
+  /// of the in-sheet "Open" offer. `null` while the sheet only mirrors a
+  /// *pre-existing* library entry, so no "Open" is offered then.
+  MediaItem? _addedItem;
+
+  /// Non-fatal notice shown inside the "added" state (e.g. a series whose
+  /// episodes could not be loaded, so it stayed in the watchlist). `null` when
+  /// there is nothing to report.
+  String? _notice;
   String? _error;
 
   bool get _busy => _watchlistBusy || _watchedBusy;
@@ -96,11 +106,9 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
     final details = _details;
     if (details == null || _busy) return;
 
-    // All captured **before** the async gap: they outlive this sheet, so the
-    // snack-bar action stays usable after it was dismissed (see
-    // [showAddedSnackBar]).
+    // Captured **before** the async gap: the messenger outlives this sheet, so
+    // a failure can still be reported if the sheet was dismissed meanwhile.
     final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
     final repository = context.read<MediaRepository>();
     final library = context.read<LibraryProvider>();
     final strings = AppStrings.read(context);
@@ -115,16 +123,13 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
       setState(() {
         _added = true;
         _addedStatus = MediaStatus.planned;
+        _addedItem = inserted;
+        _notice = null;
         _watchlistBusy = false;
       });
-      showAddedSnackBar(
-        messenger: messenger,
-        navigator: navigator,
-        strings: strings,
-        message: strings.addedToWatchlist,
-        item: inserted,
-        isSheetOpen: _isSheetOpen,
-      );
+      // The sheet deliberately stays open and now offers "Open" right in the
+      // visible state — no snack bar (it would sit behind the sheet's modal
+      // barrier, invisible and un-tappable).
     } on MediaRepositoryException catch (error) {
       _handleAddFailure(error, messenger, strings, () {
         _added = isAlreadyInLibraryError(error);
@@ -140,7 +145,6 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
     if (details == null || _busy) return;
 
     final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
     final repository = context.read<MediaRepository>();
     final library = context.read<LibraryProvider>();
     final strings = AppStrings.read(context);
@@ -160,18 +164,11 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
       setState(() {
         _added = true;
         _addedStatus = done ? MediaStatus.completed : MediaStatus.planned;
+        _addedItem = outcome.item;
+        _notice = done ? null : strings.addAsWatchedEpisodesError;
         _watchedBusy = false;
       });
-      showAddedSnackBar(
-        messenger: messenger,
-        navigator: navigator,
-        strings: strings,
-        message: done
-            ? strings.addAsWatchedDone
-            : strings.addAsWatchedEpisodesError,
-        item: outcome.item,
-        isSheetOpen: _isSheetOpen,
-      );
+      // See [_addToWatchlist]: the offer lives in the sheet, not a snack bar.
     } on MediaRepositoryException catch (error) {
       _handleAddFailure(error, messenger, strings, () {
         _added = isAlreadyInLibraryError(error);
@@ -180,9 +177,23 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
     }
   }
 
-  /// Whether this sheet is still the top route — drives the controlled close in
-  /// [showAddedSnackBar]. `false` once it was dismissed (or is mid-closing).
-  bool _isSheetOpen() => mounted && ModalRoute.of(context)?.isCurrent == true;
+  /// Opens the just-added item's detail view: a **controlled close** of this
+  /// sheet (only while it is still the top route), then the push — so the
+  /// sheet is gone before the detail view appears.
+  ///
+  /// The app-level [Navigator] is captured *before* the pop, so the push never
+  /// touches a disposed `BuildContext`.
+  void _openAddedItem() {
+    final item = _addedItem;
+    if (item == null) return;
+    final navigator = Navigator.of(context);
+    if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+      navigator.pop();
+    }
+    navigator.push(
+      MaterialPageRoute<void>(builder: (_) => MediaDetailScreen(item: item)),
+    );
+  }
 
   /// Shared failure handling of both add actions: a duplicate flips the sheet
   /// into the "already in your library" state, anything else is shown as-is.
@@ -306,6 +317,8 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
       watchedBusy: _watchedBusy,
       onWatchlist: _addToWatchlist,
       onWatched: _addAsWatched,
+      onOpen: _addedItem == null ? null : _openAddedItem,
+      notice: _notice,
     );
   }
 }
@@ -334,6 +347,16 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
   /// Status of the already-tracked entry (when [_added] came from the library),
   /// so the sheet can say "Already watched" for a completed title.
   MediaStatus? _addedStatus;
+
+  /// The row stored by this sheet's own add (watchlist / watched) — the target
+  /// of the in-sheet "Open" offer. `null` while the sheet only mirrors a
+  /// *pre-existing* library entry, so no "Open" is offered then.
+  MediaItem? _addedItem;
+
+  /// Non-fatal notice shown inside the "added" state (e.g. a series whose
+  /// episodes could not be loaded, so it stayed in the watchlist). `null` when
+  /// there is nothing to report.
+  String? _notice;
   String? _error;
 
   bool get _busy => _watchlistBusy || _watchedBusy;
@@ -397,9 +420,9 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
     final details = _details;
     if (details == null || _busy) return;
 
-    // Captured before the async gap so the snack-bar action outlives the sheet.
+    // Captured before the async gap so a failure can still be reported if the
+    // sheet was dismissed meanwhile.
     final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
     final repository = context.read<MediaRepository>();
     final library = context.read<LibraryProvider>();
     final strings = AppStrings.read(context);
@@ -414,16 +437,13 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
       setState(() {
         _added = true;
         _addedStatus = MediaStatus.planned;
+        _addedItem = inserted;
+        _notice = null;
         _watchlistBusy = false;
       });
-      showAddedSnackBar(
-        messenger: messenger,
-        navigator: navigator,
-        strings: strings,
-        message: strings.addedToWatchlist,
-        item: inserted,
-        isSheetOpen: _isSheetOpen,
-      );
+      // The sheet deliberately stays open and now offers "Open" right in the
+      // visible state — no snack bar (it would sit behind the sheet's modal
+      // barrier, invisible and un-tappable).
     } on MediaRepositoryException catch (error) {
       _handleAddFailure(error, messenger, strings, () {
         _added = isAlreadyInLibraryError(error);
@@ -439,7 +459,6 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
     if (details == null || _busy) return;
 
     final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
     final repository = context.read<MediaRepository>();
     final library = context.read<LibraryProvider>();
     final strings = AppStrings.read(context);
@@ -458,18 +477,11 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
       setState(() {
         _added = true;
         _addedStatus = done ? MediaStatus.completed : MediaStatus.planned;
+        _addedItem = outcome.item;
+        _notice = done ? null : strings.addAsWatchedEpisodesError;
         _watchedBusy = false;
       });
-      showAddedSnackBar(
-        messenger: messenger,
-        navigator: navigator,
-        strings: strings,
-        message: done
-            ? strings.addAsWatchedDone
-            : strings.addAsWatchedEpisodesError,
-        item: outcome.item,
-        isSheetOpen: _isSheetOpen,
-      );
+      // See [_addToWatchlist]: the offer lives in the sheet, not a snack bar.
     } on MediaRepositoryException catch (error) {
       _handleAddFailure(error, messenger, strings, () {
         _added = isAlreadyInLibraryError(error);
@@ -478,9 +490,23 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
     }
   }
 
-  /// Whether this sheet is still the top route — drives the controlled close in
-  /// [showAddedSnackBar]. `false` once it was dismissed (or is mid-closing).
-  bool _isSheetOpen() => mounted && ModalRoute.of(context)?.isCurrent == true;
+  /// Opens the just-added item's detail view: a **controlled close** of this
+  /// sheet (only while it is still the top route), then the push — so the
+  /// sheet is gone before the detail view appears.
+  ///
+  /// The app-level [Navigator] is captured *before* the pop, so the push never
+  /// touches a disposed `BuildContext`.
+  void _openAddedItem() {
+    final item = _addedItem;
+    if (item == null) return;
+    final navigator = Navigator.of(context);
+    if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+      navigator.pop();
+    }
+    navigator.push(
+      MaterialPageRoute<void>(builder: (_) => MediaDetailScreen(item: item)),
+    );
+  }
 
   /// Shared failure handling of both add actions: a duplicate flips the sheet
   /// into the "already in your library" state, anything else is shown as-is.
@@ -605,6 +631,8 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
       watchedBusy: _watchedBusy,
       onWatchlist: _addToWatchlist,
       onWatched: _addAsWatched,
+      onOpen: _addedItem == null ? null : _openAddedItem,
+      notice: _notice,
     );
   }
 }
@@ -729,42 +757,6 @@ Future<AddAsWatchedOutcome> insertAsWatched(
   return (result: result, item: finalItem);
 }
 
-/// Shows the "added" confirmation with an **Open** action that jumps straight
-/// into the new entry's detail view (so the user can record "where am I").
-///
-/// **Context robustness — why this survives a closed sheet:** [messenger] and
-/// [navigator] are captured by the caller *before* the async insert, so they
-/// belong to the app-level messenger / navigator and outlive the detail sheet;
-/// tapping the action never touches a disposed `BuildContext`. [isSheetOpen]
-/// reports whether the sheet is still the top route: if so it is closed
-/// **before** navigating (a controlled close), otherwise — dismissed or
-/// mid-closing — nothing is popped and the detail view is pushed directly.
-void showAddedSnackBar({
-  required ScaffoldMessengerState messenger,
-  required NavigatorState navigator,
-  required AppStrings strings,
-  required String message,
-  required MediaItem item,
-  required bool Function() isSheetOpen,
-}) {
-  messenger.showSnackBar(
-    SnackBar(
-      content: Text(message),
-      action: SnackBarAction(
-        label: strings.open,
-        onPressed: () {
-          if (isSheetOpen()) navigator.pop();
-          navigator.push(
-            MaterialPageRoute<void>(
-              builder: (_) => MediaDetailScreen(item: item),
-            ),
-          );
-        },
-      ),
-    ),
-  );
-}
-
 /// The two add actions of a detail sheet.
 ///
 /// * "Add to watchlist" — the classic `planned` add.
@@ -773,7 +765,12 @@ void showAddedSnackBar({
 /// While an action runs both buttons are disabled and the running one shows a
 /// spinner, so the user gets a visible loading state (important for a series,
 /// whose episode load can take a moment). Once the item is tracked, the
-/// actions are replaced by the "already in your library" confirmation.
+/// actions are replaced by the "already in your library" confirmation —
+/// **plus**, when this sheet did the add itself ([onOpen] is set), a clearly
+/// visible **"Open"** button that jumps straight into the new entry's detail
+/// view (so the user can record "where am I"). The offer lives *in the sheet*,
+/// not in a snack bar: a snack bar would render behind the sheet's modal
+/// barrier and be unreachable while the sheet stays open (which it does).
 class _AddActions extends StatelessWidget {
   const _AddActions({
     required this.added,
@@ -782,6 +779,8 @@ class _AddActions extends StatelessWidget {
     required this.watchedBusy,
     required this.onWatchlist,
     required this.onWatched,
+    this.onOpen,
+    this.notice,
   });
 
   final bool added;
@@ -793,6 +792,15 @@ class _AddActions extends StatelessWidget {
   final bool watchedBusy;
   final VoidCallback onWatchlist;
   final VoidCallback onWatched;
+
+  /// Opens the just-added item's detail view. `null` while the sheet only
+  /// mirrors a *pre-existing* library entry (no add happened here), in which
+  /// case no "Open" is offered.
+  final VoidCallback? onOpen;
+
+  /// Optional non-fatal note shown in the "added" state (e.g. the series that
+  /// had to stay in the watchlist). `null` when there is nothing to report.
+  final String? notice;
 
   /// A spinner sized for use inside a button icon slot.
   static const Widget _spinner = SizedBox(
@@ -808,18 +816,53 @@ class _AddActions extends StatelessWidget {
     final strings = context.strings;
 
     if (added) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      final open = onOpen;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.check_circle, color: cs.primary),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              completed ? strings.alreadyWatched : strings.alreadyInLibrary,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium?.copyWith(color: cs.primary),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.check_circle, color: cs.primary),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  completed ? strings.alreadyWatched : strings.alreadyInLibrary,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: cs.primary,
+                  ),
+                ),
+              ),
+            ],
           ),
+          if (notice != null) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    notice!,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (open != null) ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: open,
+              icon: const Icon(Icons.open_in_new),
+              label: Text(strings.open),
+            ),
+          ],
         ],
       );
     }

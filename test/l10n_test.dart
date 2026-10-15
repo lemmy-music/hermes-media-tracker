@@ -391,7 +391,7 @@ void main() {
       expect(en.addToWatchlist, isNot(en.addAsWatched));
     });
 
-    test('the snack-bar open action is localized', () {
+    test('the open action is localized', () {
       expect(de.open, 'Öffnen');
       expect(en.open, 'Open');
     });
