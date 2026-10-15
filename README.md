@@ -28,6 +28,8 @@ Series status and progress are **derived** from the checked episodes (e.g. 10/19
 
 **Timestamps** — start and completion dates are tracked automatically and can be edited or back-dated manually.
 
+**Browse by category** — the library tab opens on four fixed category tiles (**Movies / Series / Books / All**) with the entry count of each, so a large library does not bury the list on open. Tapping a tile opens the list filtered to that category (the filter chip shows the preselection and stays changeable).
+
 **Find things again** — the library is searchable (title, plus authors for books; diacritic-tolerant, so "herr" finds "Der Herr der Ringe") and filterable by media type and status, with sorting by recently added, title, release year or progress.
 
 **Statistics** —
@@ -78,7 +80,8 @@ lib/
 ├── screens/       library, search, media detail, login, stats
 ├── services/      TMDB + OpenLibrary clients, ISBN parsing, library filter,
 │                  stats calculator, export/import, download helper
-└── widgets/       shared UI (settings sheet, media tiles, detail sheets, auth gate)
+└── widgets/       shared UI (library list view + category tiles, settings sheet,
+                   media tiles, detail sheets, auth gate)
 ```
 
 Business rules are deliberately kept out of the widgets: page-progress deltas, series
@@ -142,6 +145,7 @@ Pushing to `main` triggers [`.github/workflows/build-web.yml`](.github/workflows
 | 6b | ISBN barcode scanner (camera) | ⏸️ deferred to a native build |
 | 7 | Bulk catch-up prompts, add-as-watched from search | ✅ |
 | 8 | Library / watched status badges in search results | ✅ |
+| 9 | Category tiles landing screen for the library | ✅ |
 
 Detailed vision, decisions and known limitations: [`PROJECT.md`](PROJECT.md).
 

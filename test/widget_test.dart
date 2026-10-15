@@ -8,13 +8,15 @@ import 'package:media_tracker/providers/auth_provider.dart';
 import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/providers/theme_provider.dart';
 import 'package:media_tracker/repositories/media_repository.dart';
+import 'package:media_tracker/screens/library_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// In-memory auth provider — no Supabase backend required.
 class _FakeAuth extends AuthProvider {
   _FakeAuth({AuthStatus status = AuthStatus.signedIn, String? email})
-      : _status = status,
-        _email = email ?? (status == AuthStatus.signedIn ? 'me@example.com' : null);
+    : _status = status,
+      _email =
+          email ?? (status == AuthStatus.signedIn ? 'me@example.com' : null);
 
   AuthStatus _status;
   String? _email;
@@ -80,11 +82,11 @@ class _FakeRepository extends MediaRepository {
 }
 
 MediaItem _movie(String title) => MediaItem(
-      id: 'id-${title.hashCode}',
-      kind: MediaKind.movie,
-      title: title,
-      releaseYear: 2010,
-    );
+  id: 'id-${title.hashCode}',
+  kind: MediaKind.movie,
+  title: title,
+  releaseYear: 2010,
+);
 
 Future<void> _pumpApp(
   WidgetTester tester, {
@@ -111,8 +113,9 @@ void main() {
   // The language toggle persists via SharedPreferences — give it a mock store.
   setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
 
-  testWidgets('shows a loading indicator while the session is restored',
-      (WidgetTester tester) async {
+  testWidgets('shows a loading indicator while the session is restored', (
+    WidgetTester tester,
+  ) async {
     final auth = _FakeAuth(status: AuthStatus.unknown);
     await _pumpApp(tester, auth: auth);
 
@@ -125,8 +128,9 @@ void main() {
     expect(find.text('Send magic link'), findsOneWidget);
   });
 
-  testWidgets('signed out: shows the magic-link login screen',
-      (WidgetTester tester) async {
+  testWidgets('signed out: shows the magic-link login screen', (
+    WidgetTester tester,
+  ) async {
     await _pumpApp(tester, auth: _FakeAuth(status: AuthStatus.signedOut));
 
     expect(find.text('Email address'), findsOneWidget);
@@ -134,8 +138,9 @@ void main() {
     expect(find.text('Library'), findsNothing);
   });
 
-  testWidgets('reacts to an auth state change (magic-link redirect)',
-      (WidgetTester tester) async {
+  testWidgets('reacts to an auth state change (magic-link redirect)', (
+    WidgetTester tester,
+  ) async {
     final auth = _FakeAuth(status: AuthStatus.signedOut);
     await _pumpApp(tester, auth: auth);
     expect(find.text('Send magic link'), findsOneWidget);
@@ -150,8 +155,9 @@ void main() {
     expect(find.text('Your library is empty'), findsOneWidget);
   });
 
-  testWidgets('login: validates the email and shows the confirmation view',
-      (WidgetTester tester) async {
+  testWidgets('login: validates the email and shows the confirmation view', (
+    WidgetTester tester,
+  ) async {
     final auth = _FakeAuth(status: AuthStatus.signedOut);
     await _pumpApp(tester, auth: auth);
 
@@ -171,14 +177,12 @@ void main() {
     expect(auth.sendCount, 1);
     expect(auth.lastRequestedEmail, 'daniel@example.com');
     expect(find.text('Check your inbox'), findsOneWidget);
-    expect(
-      find.textContaining('daniel@example.com'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('daniel@example.com'), findsOneWidget);
   });
 
-  testWidgets('login: surfaces a provider error message',
-      (WidgetTester tester) async {
+  testWidgets('login: surfaces a provider error message', (
+    WidgetTester tester,
+  ) async {
     final auth = _FakeAuth(status: AuthStatus.signedOut)
       ..nextError = 'Too many requests. Please wait a few minutes.';
     await _pumpApp(tester, auth: auth);
@@ -195,8 +199,9 @@ void main() {
     expect(find.text('Check your inbox'), findsNothing);
   });
 
-  testWidgets('signed in: renders the three navigation tabs',
-      (WidgetTester tester) async {
+  testWidgets('signed in: renders the three navigation tabs', (
+    WidgetTester tester,
+  ) async {
     await _pumpApp(tester, auth: _FakeAuth());
 
     expect(find.text('Your library is empty'), findsOneWidget);
@@ -205,8 +210,9 @@ void main() {
     expect(find.text('Stats'), findsOneWidget);
   });
 
-  testWidgets('bottom navigation switches to the Search tab',
-      (WidgetTester tester) async {
+  testWidgets('bottom navigation switches to the Search tab', (
+    WidgetTester tester,
+  ) async {
     await _pumpApp(tester, auth: _FakeAuth());
 
     await tester.tap(find.text('Search'));
@@ -224,6 +230,11 @@ void main() {
       ),
     );
 
+    // The library tab opens on the category tiles; the list is one tap away.
+    expect(find.text('Your library is empty'), findsNothing);
+    await tester.tap(find.byKey(LibraryScreen.allTileKey));
+    await tester.pumpAndSettle();
+
     expect(find.text('Inception'), findsOneWidget);
     expect(find.text('Arrival'), findsOneWidget);
     expect(find.text('Your library is empty'), findsNothing);
@@ -231,8 +242,9 @@ void main() {
     expect(find.text('Planned'), findsNWidgets(2));
   });
 
-  testWidgets('library shows an error state with a working retry',
-      (WidgetTester tester) async {
+  testWidgets('library shows an error state with a working retry', (
+    WidgetTester tester,
+  ) async {
     final repository = _FakeRepository(error: 'Could not load your library.');
     await _pumpApp(tester, auth: _FakeAuth(), repository: repository);
 
@@ -249,11 +261,15 @@ void main() {
     await tester.pump();
 
     expect(repository.fetchCount, 2);
+    // Backend recovered → the landing tiles appear; open the list to see them.
+    await tester.tap(find.byKey(LibraryScreen.allTileKey));
+    await tester.pumpAndSettle();
     expect(find.text('Inception'), findsOneWidget);
   });
 
-  testWidgets('settings sheet shows the account and signs out',
-      (WidgetTester tester) async {
+  testWidgets('settings sheet shows the account and signs out', (
+    WidgetTester tester,
+  ) async {
     final auth = _FakeAuth(email: 'daniel@example.com');
     await _pumpApp(tester, auth: auth);
 
@@ -274,14 +290,11 @@ void main() {
     expect(find.text('Send magic link'), findsOneWidget);
   });
 
-  testWidgets('defaults to German when nothing is stored',
-      (WidgetTester tester) async {
+  testWidgets('defaults to German when nothing is stored', (
+    WidgetTester tester,
+  ) async {
     // A provider with the default initial value == first launch, no prefs.
-    await _pumpApp(
-      tester,
-      auth: _FakeAuth(),
-      settings: SettingsProvider(),
-    );
+    await _pumpApp(tester, auth: _FakeAuth(), settings: SettingsProvider());
 
     expect(find.text('Deine Bibliothek ist leer'), findsOneWidget);
     expect(find.text('Bibliothek'), findsWidgets);
@@ -290,8 +303,9 @@ void main() {
     expect(find.text('Your library is empty'), findsNothing);
   });
 
-  testWidgets('German covers the login screen too',
-      (WidgetTester tester) async {
+  testWidgets('German covers the login screen too', (
+    WidgetTester tester,
+  ) async {
     await _pumpApp(
       tester,
       auth: _FakeAuth(status: AuthStatus.signedOut),
@@ -303,8 +317,9 @@ void main() {
     expect(find.text('Send magic link'), findsNothing);
   });
 
-  testWidgets('settings sheet toggles the language immediately',
-      (WidgetTester tester) async {
+  testWidgets('settings sheet toggles the language immediately', (
+    WidgetTester tester,
+  ) async {
     await _pumpApp(tester, auth: _FakeAuth());
 
     await tester.tap(find.byIcon(Icons.settings));

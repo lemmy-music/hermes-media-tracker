@@ -416,4 +416,62 @@ void main() {
       }
     });
   });
+
+  group('library landing tile strings (phase 9)', () {
+    const de = AppStrings(AppLanguage.de);
+    const en = AppStrings(AppLanguage.en);
+
+    test('every new string exists in both languages', () {
+      final pairs = <(String, String)>[
+        (de.libraryTilesSubtitle, en.libraryTilesSubtitle),
+        (
+          de.libraryTileLabel(LibraryKindFilter.movies),
+          en.libraryTileLabel(LibraryKindFilter.movies),
+        ),
+        (
+          de.libraryTileLabel(LibraryKindFilter.all),
+          en.libraryTileLabel(LibraryKindFilter.all),
+        ),
+        (
+          de.libraryTileCount(LibraryKindFilter.all, 2),
+          en.libraryTileCount(LibraryKindFilter.all, 2),
+        ),
+        (
+          de.libraryListTitle(LibraryKindFilter.movies),
+          en.libraryListTitle(LibraryKindFilter.movies),
+        ),
+      ];
+      for (final (german, english) in pairs) {
+        expect(german.trim(), isNotEmpty);
+        expect(english.trim(), isNotEmpty);
+        expect(german, isNot(english));
+      }
+    });
+
+    test('tile counts are singular/plural-aware', () {
+      expect(de.libraryTileCount(LibraryKindFilter.movies, 1), '1 Film');
+      expect(de.libraryTileCount(LibraryKindFilter.movies, 128), '128 Filme');
+      expect(de.libraryTileCount(LibraryKindFilter.series, 2), '2 Serien');
+      expect(de.libraryTileCount(LibraryKindFilter.books, 1), '1 Buch');
+      expect(de.libraryTileCount(LibraryKindFilter.books, 5), '5 Bücher');
+      expect(de.libraryTileCount(LibraryKindFilter.all, 1), '1 Eintrag');
+      expect(de.libraryTileCount(LibraryKindFilter.all, 5), '5 Einträge');
+
+      expect(en.libraryTileCount(LibraryKindFilter.movies, 1), '1 movie');
+      expect(en.libraryTileCount(LibraryKindFilter.movies, 128), '128 movies');
+      expect(en.libraryTileCount(LibraryKindFilter.books, 2), '2 books');
+      expect(en.libraryTileCount(LibraryKindFilter.all, 3), '3 items');
+    });
+
+    test('tile labels and list titles reuse the kind strings', () {
+      expect(de.libraryTileLabel(LibraryKindFilter.all), 'Alle');
+      expect(de.libraryTileLabel(LibraryKindFilter.books), 'Bücher');
+      expect(en.libraryTileLabel(LibraryKindFilter.movies), 'Movies');
+
+      expect(de.libraryListTitle(LibraryKindFilter.movies), 'Filme');
+      expect(de.libraryListTitle(LibraryKindFilter.all), 'Bibliothek');
+      expect(en.libraryListTitle(LibraryKindFilter.all), 'Library');
+      expect(en.libraryListTitle(LibraryKindFilter.series), 'Series');
+    });
+  });
 }

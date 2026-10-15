@@ -16,6 +16,7 @@ import 'package:media_tracker/providers/library_provider.dart';
 import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/providers/theme_provider.dart';
 import 'package:media_tracker/repositories/media_repository.dart';
+import 'package:media_tracker/screens/library_screen.dart';
 import 'package:media_tracker/services/tmdb_client.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -489,6 +490,11 @@ void main() {
       // Initial (automatic) library load.
       await tester.pump();
       await tester.pump();
+
+      // The library tab opens on the category tiles — open the list to see the
+      // loaded items.
+      await tester.tap(find.byKey(LibraryScreen.allTileKey));
+      await tester.pumpAndSettle();
       expect(find.text('Inception'), findsOneWidget);
 
       await settings.setLanguage(AppLanguage.de);

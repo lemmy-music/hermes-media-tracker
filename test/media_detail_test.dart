@@ -14,6 +14,7 @@ import 'package:media_tracker/providers/auth_provider.dart';
 import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/providers/theme_provider.dart';
 import 'package:media_tracker/repositories/media_repository.dart';
+import 'package:media_tracker/screens/library_screen.dart';
 import 'package:media_tracker/screens/media_detail_screen.dart';
 import 'package:media_tracker/services/tmdb_client.dart';
 
@@ -402,6 +403,11 @@ Future<void> _openDetail(
       tmdbClient: tmdb ?? _StubTmdb(),
     ),
   );
+  await tester.pumpAndSettle();
+
+  // The library tab opens on the category tiles; open the list before tapping
+  // the row (the details are reached from there).
+  await tester.tap(find.byKey(LibraryScreen.allTileKey));
   await tester.pumpAndSettle();
 
   await tester.tap(find.text(title).first);
@@ -1305,5 +1311,10 @@ Future<void> _pumpLibrary(
       tmdbClient: _StubTmdb(),
     ),
   );
+  await tester.pumpAndSettle();
+
+  // The library tab opens on the category tiles — open the full list so the
+  // list-level assertions see the rows.
+  await tester.tap(find.byKey(LibraryScreen.allTileKey));
   await tester.pumpAndSettle();
 }

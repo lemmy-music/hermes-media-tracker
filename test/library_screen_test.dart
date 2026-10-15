@@ -10,6 +10,8 @@ import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/providers/theme_provider.dart';
 import 'package:media_tracker/repositories/media_repository.dart';
 import 'package:media_tracker/screens/library_screen.dart';
+import 'package:media_tracker/services/library_filter.dart';
+import 'package:media_tracker/widgets/library_view.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // fakes — no Supabase, no network
@@ -83,6 +85,15 @@ Future<void> _pumpLibrary(
   await tester.pumpAndSettle();
 }
 
+/// Opens the pushed list view from the landing screen via a category tile.
+Future<void> _openList(
+  WidgetTester tester, {
+  LibraryKindFilter filter = LibraryKindFilter.all,
+}) async {
+  await tester.tap(find.byKey(LibraryScreen.tileKeyFor(filter)));
+  await tester.pumpAndSettle();
+}
+
 Finder _chip(String label) => find.widgetWithText(ChoiceChip, label);
 
 void main() {
@@ -98,16 +109,17 @@ void main() {
         _movie(title: 'Arrival'),
       ],
     );
+    await _openList(tester);
 
     // No search / filter UI clutter until it is asked for.
-    expect(find.byKey(LibraryScreen.searchFieldKey), findsNothing);
+    expect(find.byKey(LibraryListView.searchFieldKey), findsNothing);
     expect(find.text('1 result of 2'), findsNothing);
 
-    await tester.tap(find.byKey(LibraryScreen.searchToggleKey));
+    await tester.tap(find.byKey(LibraryListView.searchToggleKey));
     await tester.pump();
-    expect(find.byKey(LibraryScreen.searchFieldKey), findsOneWidget);
+    expect(find.byKey(LibraryListView.searchFieldKey), findsOneWidget);
 
-    await tester.enterText(find.byKey(LibraryScreen.searchFieldKey), 'incep');
+    await tester.enterText(find.byKey(LibraryListView.searchFieldKey), 'incep');
     await tester.pump();
 
     expect(find.text('Inception'), findsOneWidget);
@@ -123,10 +135,14 @@ void main() {
         _movie(title: 'Inception'),
       ],
     );
+    await _openList(tester);
 
-    await tester.tap(find.byKey(LibraryScreen.searchToggleKey));
+    await tester.tap(find.byKey(LibraryListView.searchToggleKey));
     await tester.pump();
-    await tester.enterText(find.byKey(LibraryScreen.searchFieldKey), 'herbert');
+    await tester.enterText(
+      find.byKey(LibraryListView.searchFieldKey),
+      'herbert',
+    );
     await tester.pump();
 
     expect(find.text('Dune'), findsOneWidget);
@@ -143,8 +159,9 @@ void main() {
         _book(title: 'Dune', status: MediaStatus.completed),
       ],
     );
+    await _openList(tester);
 
-    await tester.tap(find.byKey(LibraryScreen.filterToggleKey));
+    await tester.tap(find.byKey(LibraryListView.filterToggleKey));
     await tester.pump();
 
     await tester.tap(_chip('Movies'));
@@ -161,7 +178,7 @@ void main() {
     // Books + planned → nothing left, and it must be the "no matches" state.
     await tester.tap(_chip('Planned'));
     await tester.pump();
-    expect(find.byKey(LibraryScreen.noMatchesKey), findsOneWidget);
+    expect(find.byKey(LibraryListView.noMatchesKey), findsOneWidget);
     expect(find.text('No matches'), findsOneWidget);
     expect(find.text('Your library is empty'), findsNothing);
   });
@@ -174,15 +191,16 @@ void main() {
         _book(title: 'Dune'),
       ],
     );
+    await _openList(tester);
 
-    await tester.tap(find.byKey(LibraryScreen.filterToggleKey));
+    await tester.tap(find.byKey(LibraryListView.filterToggleKey));
     await tester.pump();
     await tester.tap(_chip('Books'));
     await tester.pump();
     expect(find.text('Dune'), findsOneWidget);
     expect(find.text('Inception'), findsNothing);
 
-    await tester.tap(find.byKey(LibraryScreen.resetFiltersKey));
+    await tester.tap(find.byKey(LibraryListView.resetFiltersKey));
     await tester.pump();
 
     expect(find.text('Inception'), findsOneWidget);
@@ -196,22 +214,23 @@ void main() {
     tester,
   ) async {
     await _pumpLibrary(tester, items: [_movie(title: 'Inception')]);
+    await _openList(tester);
 
-    await tester.tap(find.byKey(LibraryScreen.searchToggleKey));
+    await tester.tap(find.byKey(LibraryListView.searchToggleKey));
     await tester.pump();
-    await tester.enterText(find.byKey(LibraryScreen.searchFieldKey), 'zzz');
+    await tester.enterText(find.byKey(LibraryListView.searchFieldKey), 'zzz');
     await tester.pump();
 
-    expect(find.byKey(LibraryScreen.noMatchesKey), findsOneWidget);
+    expect(find.byKey(LibraryListView.noMatchesKey), findsOneWidget);
     expect(find.text('No matches'), findsOneWidget);
     expect(find.text('Your library is empty'), findsNothing);
     // The reset action is offered right there.
     expect(find.text('Reset filters'), findsWidgets);
 
-    await tester.tap(find.byKey(LibraryScreen.resetFiltersKey));
+    await tester.tap(find.byKey(LibraryListView.resetFiltersKey));
     await tester.pump();
     expect(find.text('Inception'), findsOneWidget);
-    expect(find.byKey(LibraryScreen.noMatchesKey), findsNothing);
+    expect(find.byKey(LibraryListView.noMatchesKey), findsNothing);
   });
 
   testWidgets('an empty library keeps the plain empty state (no controls)', (
@@ -220,9 +239,11 @@ void main() {
     await _pumpLibrary(tester, items: const <MediaItem>[]);
 
     expect(find.text('Your library is empty'), findsOneWidget);
-    expect(find.byKey(LibraryScreen.searchToggleKey), findsNothing);
-    expect(find.byKey(LibraryScreen.filterToggleKey), findsNothing);
-    expect(find.byKey(LibraryScreen.noMatchesKey), findsNothing);
+    // No category tiles for an empty library.
+    expect(find.byKey(LibraryScreen.allTileKey), findsNothing);
+    expect(find.byKey(LibraryListView.searchToggleKey), findsNothing);
+    expect(find.byKey(LibraryListView.filterToggleKey), findsNothing);
+    expect(find.byKey(LibraryListView.noMatchesKey), findsNothing);
   });
 
   testWidgets('the sort menu reorders the list', (tester) async {
@@ -234,6 +255,7 @@ void main() {
         _movie(title: 'Apple', createdAt: DateTime(2024, 1, 1)),
       ],
     );
+    await _openList(tester);
 
     expect(
       tester.getTopLeft(find.text('Zebra')).dy <
@@ -242,7 +264,7 @@ void main() {
     );
 
     // …while "Title A–Z" puts Apple first.
-    await tester.tap(find.byKey(LibraryScreen.sortMenuKey));
+    await tester.tap(find.byKey(LibraryListView.sortMenuKey));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Title A–Z'));
     await tester.pumpAndSettle();
@@ -263,16 +285,17 @@ void main() {
       ],
       language: AppLanguage.de,
     );
+    await _openList(tester);
 
-    await tester.tap(find.byKey(LibraryScreen.searchToggleKey));
+    await tester.tap(find.byKey(LibraryListView.searchToggleKey));
     await tester.pump();
     expect(find.text('Titel durchsuchen'), findsOneWidget);
 
-    await tester.enterText(find.byKey(LibraryScreen.searchFieldKey), 'incep');
+    await tester.enterText(find.byKey(LibraryListView.searchFieldKey), 'incep');
     await tester.pump();
     expect(find.text('1 Treffer von 2'), findsOneWidget);
 
-    await tester.tap(find.byKey(LibraryScreen.filterToggleKey));
+    await tester.tap(find.byKey(LibraryListView.filterToggleKey));
     await tester.pump();
     expect(_chip('Filme'), findsOneWidget);
     expect(_chip('Bücher'), findsOneWidget);

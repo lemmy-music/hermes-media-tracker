@@ -181,6 +181,42 @@ class AppStrings {
     {'shown': '$shown', 'total': '$total'},
   );
 
+  // ── library landing tiles (Phase 9) ────────────────────────────────────────
+
+  /// Subtitle above the category tiles on the library landing screen.
+  String get libraryTilesSubtitle => _t('libraryTilesSubtitle');
+
+  /// Plural heading of a landing tile (`All` / `Movies` / `Series` / `Books`).
+  String libraryTileLabel(LibraryKindFilter filter) {
+    final kind = filter.kind;
+    return kind == null ? _t('scopeAll') : kindPluralLabel(kind);
+  }
+
+  /// Singular/plural-aware count under a landing tile, e.g. "1 Film" / "2 Filme"
+  /// or "1 Eintrag" / "5 Einträge".
+  String libraryTileCount(LibraryKindFilter filter, int count) {
+    final kind = filter.kind;
+    if (kind == null) {
+      return _tParam(
+        count == 1 ? 'libraryCountAllOne' : 'libraryCountAllMany',
+        {'count': '$count'},
+      );
+    }
+    final key = switch (kind) {
+      MediaKind.movie => 'libraryCountMovie',
+      MediaKind.series => 'libraryCountSeries',
+      MediaKind.book => 'libraryCountBook',
+    };
+    return _tParam('$key${count == 1 ? 'One' : 'Many'}', {'count': '$count'});
+  }
+
+  /// AppBar title of the pushed list view for [filter] (a tapped tile's
+  /// category; `All` falls back to the plain library title).
+  String libraryListTitle(LibraryKindFilter filter) {
+    final kind = filter.kind;
+    return kind == null ? _t('library') : kindPluralLabel(kind);
+  }
+
   // ───────────────────────────────────────────────────────────────────────────
   // metadata refresh (language change / manual)
   // ───────────────────────────────────────────────────────────────────────────
@@ -703,6 +739,16 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'libraryEmptyTitle': 'Deine Bibliothek ist leer',
     'libraryEmptyMessage':
         'Filme, Serien und Bücher, die du verfolgst, erscheinen hier.',
+    // library landing tiles (phase 9)
+    'libraryTilesSubtitle': 'Nach Kategorie stöbern',
+    'libraryCountMovieOne': '{count} Film',
+    'libraryCountMovieMany': '{count} Filme',
+    'libraryCountSeriesOne': '{count} Serie',
+    'libraryCountSeriesMany': '{count} Serien',
+    'libraryCountBookOne': '{count} Buch',
+    'libraryCountBookMany': '{count} Bücher',
+    'libraryCountAllOne': '{count} Eintrag',
+    'libraryCountAllMany': '{count} Einträge',
     // library search / filter / sort (phase 5b)
     'librarySearchHint': 'Titel durchsuchen',
     'filterLabel': 'Filtern',
@@ -992,6 +1038,16 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'libraryEmptyTitle': 'Your library is empty',
     'libraryEmptyMessage':
         'Movies, series and books you track will show up here.',
+    // library landing tiles (phase 9)
+    'libraryTilesSubtitle': 'Browse by category',
+    'libraryCountMovieOne': '{count} movie',
+    'libraryCountMovieMany': '{count} movies',
+    'libraryCountSeriesOne': '{count} series',
+    'libraryCountSeriesMany': '{count} series',
+    'libraryCountBookOne': '{count} book',
+    'libraryCountBookMany': '{count} books',
+    'libraryCountAllOne': '{count} item',
+    'libraryCountAllMany': '{count} items',
     // library search / filter / sort (phase 5b)
     'librarySearchHint': 'Search by title',
     'filterLabel': 'Filter',
