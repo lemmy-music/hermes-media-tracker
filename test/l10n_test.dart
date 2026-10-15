@@ -391,6 +391,11 @@ void main() {
       expect(en.addToWatchlist, isNot(en.addAsWatched));
     });
 
+    test('the snack-bar open action is localized', () {
+      expect(de.open, 'Öffnen');
+      expect(en.open, 'Open');
+    });
+
     test('the catch-up dialogs are plural-aware in both languages', () {
       expect(de.catchUpEpisodesMessage(1), contains('1 Folge'));
       expect(de.catchUpEpisodesMessage(3), contains('3 Folgen'));

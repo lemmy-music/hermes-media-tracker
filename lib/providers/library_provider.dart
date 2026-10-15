@@ -274,6 +274,56 @@ class LibraryProvider extends ChangeNotifier {
     _byIdentity = index;
   }
 
+  /// Adopts a freshly **stored** item into the in-memory library — the
+  /// network-free counterpart to a reload, called right after an insert.
+  ///
+  /// The item is placed at the front (the repository returns newest first) or
+  /// **updated in place** when it is already tracked — matched by [MediaItem.id]
+  /// first, then by external identity ([MediaItem.identityKey]) — so it is
+  /// never duplicated. Both paths go through [_setItems], which rebuilds the
+  /// O(1) identity index, so [lookup] / [badgeState] know the title
+  /// **immediately**: the library list, the landing-tile counts and the
+  /// search-result badges all update without a single extra query.
+  ///
+  /// **Never-loaded guard:** when no load has ever been attempted
+  /// ([_loadAttempted] is `false`) the list is deliberately left untouched —
+  /// adopting a single row would show a one-entry library and wrong tile
+  /// counts. A one-time [ensureLoaded] is kicked off instead, so the next full
+  /// load carries the item in its right place. (In practice the search screen
+  /// already triggers that load on open; this branch is the safety net.)
+  void adoptInserted(MediaItem item) {
+    if (!_loadAttempted) {
+      // Fire and forget: a failing load is the library tab's concern, never
+      // the add flow's.
+      ensureLoaded();
+      return;
+    }
+    final index = _itemIndex(item);
+    if (index == -1) {
+      // Newly added → newest first, matching the repository's own ordering.
+      _setItems(<MediaItem>[item, ..._items]);
+    } else {
+      final next = List<MediaItem>.of(_items)..[index] = item;
+      _setItems(next);
+    }
+    _notify();
+  }
+
+  /// The position of [item] in [_items], matched by id first, then by external
+  /// identity — `-1` when it is not tracked yet.
+  int _itemIndex(MediaItem item) {
+    final id = item.id;
+    if (id != null) {
+      final byId = _items.indexWhere((candidate) => candidate.id == id);
+      if (byId != -1) return byId;
+    }
+    final key = item.identityKey;
+    if (key != null) {
+      return _items.indexWhere((candidate) => candidate.identityKey == key);
+    }
+    return -1;
+  }
+
   // ───────────────────────────────────────────────────────────────────────────
   // tracking (Phase 3a — movies & books)
   // ───────────────────────────────────────────────────────────────────────────

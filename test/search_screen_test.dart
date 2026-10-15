@@ -14,8 +14,10 @@ import 'package:media_tracker/providers/auth_provider.dart';
 import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/providers/theme_provider.dart';
 import 'package:media_tracker/repositories/media_repository.dart';
+import 'package:media_tracker/screens/media_detail_screen.dart';
 import 'package:media_tracker/services/openlibrary_client.dart';
 import 'package:media_tracker/services/tmdb_client.dart';
+import 'package:media_tracker/widgets/detail_sheets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Always signed in — no Supabase backend needed.
@@ -47,6 +49,9 @@ class _FakeRepository extends MediaRepository {
 
   int insertCount = 0;
 
+  /// How often [fetchAll] was called — proves an add never triggers a reload.
+  int fetchCount = 0;
+
   /// The item handed to the most recent [insert] call.
   MediaItem? lastInserted;
 
@@ -63,7 +68,10 @@ class _FakeRepository extends MediaRepository {
   final List<Map<String, dynamic>> readingLogs = <Map<String, dynamic>>[];
 
   @override
-  Future<List<MediaItem>> fetchAll() async => const <MediaItem>[];
+  Future<List<MediaItem>> fetchAll() async {
+    fetchCount++;
+    return const <MediaItem>[];
+  }
 
   @override
   Future<MediaItem?> findByExternal(String source, String id) async => existing;
@@ -1134,6 +1142,161 @@ void main() {
       expect(find.text('Already watched'), findsOneWidget);
       expect(find.text('Already in your library'), findsNothing);
       expect(find.text(watched), findsNothing);
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // instant adoption + opening the new entry from the snack bar
+  // ───────────────────────────────────────────────────────────────────────────
+
+  group('an added hit shows up instantly and can be opened', () {
+    Future<void> searchAndOpen(
+      WidgetTester tester,
+      String query,
+      String title,
+    ) async {
+      await tester.enterText(find.byType(TextField), query);
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(title));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'a watchlist add shows the badge immediately, without a reload',
+      (tester) async {
+        final repository = _FakeRepository();
+        await _pumpSearch(
+          tester,
+          tmdb: _FakeTmdb(results: const [_hit]),
+          repository: repository,
+        );
+        await searchAndOpen(tester, 'inception', 'Inception');
+
+        // The only load so far is the search screen's one-time badge load.
+        expect(repository.fetchCount, 1);
+        expect(find.text('In library'), findsNothing);
+
+        await tester.tap(find.text('Add to watchlist'));
+        await tester.pumpAndSettle();
+
+        // Adopted instantly — no extra query, no reload.
+        expect(find.text('In library'), findsOneWidget);
+        expect(find.text('Watched'), findsNothing);
+        expect(repository.fetchCount, 1);
+      },
+    );
+
+    testWidgets('a mark-as-watched add shows the watched badge immediately', (
+      tester,
+    ) async {
+      final repository = _FakeRepository();
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(results: const [_hit]),
+        repository: repository,
+      );
+      await searchAndOpen(tester, 'inception', 'Inception');
+
+      await tester.tap(find.text('Mark as watched'));
+      await tester.pumpAndSettle();
+
+      // The final (completed) state is adopted right away.
+      expect(repository.trackingWrites.last['status'], 'completed');
+      expect(find.text('In library'), findsOneWidget);
+      expect(find.text('Watched'), findsOneWidget);
+      expect(repository.fetchCount, 1);
+    });
+
+    testWidgets('the snack bar action opens the new item detail view', (
+      tester,
+    ) async {
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(results: const [_hit]),
+        repository: _FakeRepository(),
+      );
+      await searchAndOpen(tester, 'inception', 'Inception');
+
+      await tester.tap(find.text('Add to watchlist'));
+      await tester.pumpAndSettle();
+      expect(find.text('Open'), findsOneWidget);
+
+      // The modal barrier covers the snack bar, so the action is tapped after
+      // the sheet was dismissed — exactly the real user flow.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(find.byKey(MediaDetailScreen.deleteButtonKey), findsNothing);
+
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      // The detail view of the right (just added) item is open.
+      expect(find.byKey(MediaDetailScreen.deleteButtonKey), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(MediaDetailScreen),
+          matching: find.text('Inception'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the snack bar action closes a still-open sheet first', (
+      tester,
+    ) async {
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(results: const [_hit]),
+        repository: _FakeRepository(),
+      );
+      await searchAndOpen(tester, 'inception', 'Inception');
+
+      await tester.tap(find.text('Add to watchlist'));
+      await tester.pumpAndSettle();
+
+      // Invoke the action's callback directly: the modal barrier makes the
+      // snack bar un-tappable while the sheet is open, but the callback must
+      // still close the sheet in a controlled way instead of using a disposed
+      // context.
+      final action = tester.widget<SnackBarAction>(find.byType(SnackBarAction));
+      action.onPressed();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TmdbDetailSheet), findsNothing);
+      expect(find.byKey(MediaDetailScreen.deleteButtonKey), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(MediaDetailScreen),
+          matching: find.text('Inception'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a series adopts its derived completed state instantly', (
+      tester,
+    ) async {
+      final repository = _FakeRepository(episodes: _episodesFor('new-id', 3));
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(
+          results: const [_tvHit],
+          tvSeasons: const <int, int>{1: 3},
+        ),
+        repository: repository,
+      );
+      await searchAndOpen(tester, 'lost', 'Lost');
+
+      await tester.tap(find.text('Mark as watched'));
+      await tester.pumpAndSettle();
+
+      // Derived from the checked-off episodes → both badges, no reload.
+      expect(find.text('In library'), findsOneWidget);
+      expect(find.text('Watched'), findsOneWidget);
+      expect(repository.trackingWrites.last['status'], 'completed');
+      expect(repository.trackingWrites.last['progress_percent'], 100);
+      expect(repository.fetchCount, 1);
     });
   });
 }

@@ -8,6 +8,7 @@ import '../models/tmdb_result.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../repositories/media_repository.dart';
+import '../screens/media_detail_screen.dart';
 import '../services/openlibrary_client.dart';
 import '../services/tmdb_client.dart';
 import 'media_widgets.dart';
@@ -95,20 +96,35 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
     final details = _details;
     if (details == null || _busy) return;
 
+    // All captured **before** the async gap: they outlive this sheet, so the
+    // snack-bar action stays usable after it was dismissed (see
+    // [showAddedSnackBar]).
     final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     final repository = context.read<MediaRepository>();
+    final library = context.read<LibraryProvider>();
     final strings = AppStrings.read(context);
 
     setState(() => _watchlistBusy = true);
     try {
-      await repository.insert(details.toMediaItem());
+      final inserted = await repository.insert(details.toMediaItem());
+      // Instant, network-free visibility: adopt the stored row so the library
+      // list, the tile counts and the search badge update right away.
+      library.adoptInserted(inserted);
       if (!mounted) return;
       setState(() {
         _added = true;
         _addedStatus = MediaStatus.planned;
         _watchlistBusy = false;
       });
-      messenger.showSnackBar(SnackBar(content: Text(strings.addedToWatchlist)));
+      showAddedSnackBar(
+        messenger: messenger,
+        navigator: navigator,
+        strings: strings,
+        message: strings.addedToWatchlist,
+        item: inserted,
+        isSheetOpen: _isSheetOpen,
+      );
     } on MediaRepositoryException catch (error) {
       _handleAddFailure(error, messenger, strings, () {
         _added = isAlreadyInLibraryError(error);
@@ -124,33 +140,37 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
     if (details == null || _busy) return;
 
     final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     final repository = context.read<MediaRepository>();
     final library = context.read<LibraryProvider>();
     final strings = AppStrings.read(context);
 
     setState(() => _watchedBusy = true);
     try {
-      final result = await insertAsWatched(
+      // [insertAsWatched] adopts the stored row and runs the normal automation
+      // (series: derived status/progress), so the returned item is the final
+      // state — no reload needed.
+      final outcome = await insertAsWatched(
         repository,
         library,
         details.toMediaItem(),
       );
+      final done = outcome.result == AddAsWatchedResult.done;
       if (!mounted) return;
       setState(() {
         _added = true;
-        _addedStatus = result == AddAsWatchedResult.done
-            ? MediaStatus.completed
-            : MediaStatus.planned;
+        _addedStatus = done ? MediaStatus.completed : MediaStatus.planned;
         _watchedBusy = false;
       });
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            result == AddAsWatchedResult.keepInWatchlist
-                ? strings.addAsWatchedEpisodesError
-                : strings.addAsWatchedDone,
-          ),
-        ),
+      showAddedSnackBar(
+        messenger: messenger,
+        navigator: navigator,
+        strings: strings,
+        message: done
+            ? strings.addAsWatchedDone
+            : strings.addAsWatchedEpisodesError,
+        item: outcome.item,
+        isSheetOpen: _isSheetOpen,
       );
     } on MediaRepositoryException catch (error) {
       _handleAddFailure(error, messenger, strings, () {
@@ -159,6 +179,10 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
       });
     }
   }
+
+  /// Whether this sheet is still the top route — drives the controlled close in
+  /// [showAddedSnackBar]. `false` once it was dismissed (or is mid-closing).
+  bool _isSheetOpen() => mounted && ModalRoute.of(context)?.isCurrent == true;
 
   /// Shared failure handling of both add actions: a duplicate flips the sheet
   /// into the "already in your library" state, anything else is shown as-is.
@@ -373,20 +397,33 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
     final details = _details;
     if (details == null || _busy) return;
 
+    // Captured before the async gap so the snack-bar action outlives the sheet.
     final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     final repository = context.read<MediaRepository>();
+    final library = context.read<LibraryProvider>();
     final strings = AppStrings.read(context);
 
     setState(() => _watchlistBusy = true);
     try {
-      await repository.insert(_buildItem(details));
+      final inserted = await repository.insert(_buildItem(details));
+      // Instant, network-free visibility: adopt the stored row so the library
+      // list, the tile counts and the search badge update right away.
+      library.adoptInserted(inserted);
       if (!mounted) return;
       setState(() {
         _added = true;
         _addedStatus = MediaStatus.planned;
         _watchlistBusy = false;
       });
-      messenger.showSnackBar(SnackBar(content: Text(strings.addedToWatchlist)));
+      showAddedSnackBar(
+        messenger: messenger,
+        navigator: navigator,
+        strings: strings,
+        message: strings.addedToWatchlist,
+        item: inserted,
+        isSheetOpen: _isSheetOpen,
+      );
     } on MediaRepositoryException catch (error) {
       _handleAddFailure(error, messenger, strings, () {
         _added = isAlreadyInLibraryError(error);
@@ -402,33 +439,36 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
     if (details == null || _busy) return;
 
     final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
     final repository = context.read<MediaRepository>();
     final library = context.read<LibraryProvider>();
     final strings = AppStrings.read(context);
 
     setState(() => _watchedBusy = true);
     try {
-      final result = await insertAsWatched(
+      // [insertAsWatched] adopts the stored row and completes it through the
+      // normal automation, so the returned item is the final state.
+      final outcome = await insertAsWatched(
         repository,
         library,
         _buildItem(details),
       );
+      final done = outcome.result == AddAsWatchedResult.done;
       if (!mounted) return;
       setState(() {
         _added = true;
-        _addedStatus = result == AddAsWatchedResult.done
-            ? MediaStatus.completed
-            : MediaStatus.planned;
+        _addedStatus = done ? MediaStatus.completed : MediaStatus.planned;
         _watchedBusy = false;
       });
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            result == AddAsWatchedResult.keepInWatchlist
-                ? strings.addAsWatchedEpisodesError
-                : strings.addAsWatchedDone,
-          ),
-        ),
+      showAddedSnackBar(
+        messenger: messenger,
+        navigator: navigator,
+        strings: strings,
+        message: done
+            ? strings.addAsWatchedDone
+            : strings.addAsWatchedEpisodesError,
+        item: outcome.item,
+        isSheetOpen: _isSheetOpen,
       );
     } on MediaRepositoryException catch (error) {
       _handleAddFailure(error, messenger, strings, () {
@@ -437,6 +477,10 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
       });
     }
   }
+
+  /// Whether this sheet is still the top route — drives the controlled close in
+  /// [showAddedSnackBar]. `false` once it was dismissed (or is mid-closing).
+  bool _isSheetOpen() => mounted && ModalRoute.of(context)?.isCurrent == true;
 
   /// Shared failure handling of both add actions: a duplicate flips the sheet
   /// into the "already in your library" state, anything else is shown as-is.
@@ -632,6 +676,10 @@ class _SheetFrame extends StatelessWidget {
 /// localized message.
 enum AddAsWatchedResult { done, keepInWatchlist }
 
+/// What [insertAsWatched] hands back: the outcome plus the **final** stored
+/// item — the caller opens this exact state in the detail view.
+typedef AddAsWatchedOutcome = ({AddAsWatchedResult result, MediaItem item});
+
 /// Adds [item] to the library and tries to mark it watched straight away.
 ///
 ///  * **Movie / book:** inserted, then set to `completed` through the normal
@@ -642,29 +690,79 @@ enum AddAsWatchedResult { done, keepInWatchlist }
 ///    then **every** episode marked watched — which derives `completed` / 100 %
 ///    via the episode automation.
 ///
+/// The freshly inserted row is **adopted** into the in-memory library
+/// ([LibraryProvider.adoptInserted]) right after the insert, so it is visible
+/// immediately and the running automation updates the very same entry in place
+/// — no reload, no extra query. The returned [AddAsWatchedOutcome.item] is the
+/// **derived** final state (series: from the checked-off episodes).
+///
 /// A series whose episodes cannot be loaded (or that simply has none) is left
-/// in the watchlist ([AddAsWatchedResult.keepInWatchlist]) — an explicit,
-/// documented trade-off: a *planned* entry the user can retry beats a broken
-/// one that claims to be complete without any watched episodes.
-Future<AddAsWatchedResult> insertAsWatched(
+/// in the watchlist (planned) — an explicit, documented trade-off: a *planned*
+/// entry the user can retry beats a broken one that claims to be complete
+/// without any watched episodes.
+Future<AddAsWatchedOutcome> insertAsWatched(
   MediaRepository repository,
   LibraryProvider library,
   MediaItem item,
 ) async {
   final inserted = await repository.insert(item);
+  // Instant, network-free visibility — adopted before the automation so every
+  // following `_replace` finds the entry and updates it in place.
+  library.adoptInserted(inserted);
+
+  var result = AddAsWatchedResult.done;
   if (inserted.kind == MediaKind.series) {
     await library.ensureEpisodes(inserted);
     final episodes = library.episodesFor(inserted.id);
     if (episodes.isEmpty) {
-      await library.load();
-      return AddAsWatchedResult.keepInWatchlist;
+      result = AddAsWatchedResult.keepInWatchlist;
+    } else {
+      await library.markAllEpisodesWatched(inserted);
     }
-    await library.markAllEpisodesWatched(inserted);
   } else {
     await library.setStatus(inserted, MediaStatus.completed);
   }
-  await library.load();
-  return AddAsWatchedResult.done;
+
+  // The automation wrote the derived state through the provider, so the fresh
+  // copy is already in the list — read it back instead of querying the server.
+  final finalItem = library.itemById(inserted.id) ?? inserted;
+  return (result: result, item: finalItem);
+}
+
+/// Shows the "added" confirmation with an **Open** action that jumps straight
+/// into the new entry's detail view (so the user can record "where am I").
+///
+/// **Context robustness — why this survives a closed sheet:** [messenger] and
+/// [navigator] are captured by the caller *before* the async insert, so they
+/// belong to the app-level messenger / navigator and outlive the detail sheet;
+/// tapping the action never touches a disposed `BuildContext`. [isSheetOpen]
+/// reports whether the sheet is still the top route: if so it is closed
+/// **before** navigating (a controlled close), otherwise — dismissed or
+/// mid-closing — nothing is popped and the detail view is pushed directly.
+void showAddedSnackBar({
+  required ScaffoldMessengerState messenger,
+  required NavigatorState navigator,
+  required AppStrings strings,
+  required String message,
+  required MediaItem item,
+  required bool Function() isSheetOpen,
+}) {
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text(message),
+      action: SnackBarAction(
+        label: strings.open,
+        onPressed: () {
+          if (isSheetOpen()) navigator.pop();
+          navigator.push(
+            MaterialPageRoute<void>(
+              builder: (_) => MediaDetailScreen(item: item),
+            ),
+          );
+        },
+      ),
+    ),
+  );
 }
 
 /// The two add actions of a detail sheet.
