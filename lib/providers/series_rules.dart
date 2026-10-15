@@ -123,3 +123,83 @@ List<int> previousSeasonsWithUnwatched(
   }.toList()..sort();
   return seasons;
 }
+
+/// The season that should be **pre-selected** when the detail view of a series
+/// is opened — i.e. the season the user is currently "in".
+///
+/// [availableSeasons] are the distinct season numbers the series has (ascending
+/// preferred, but the function sorts defensively); [episodes] is the full
+/// episode set (all seasons) as far as it is currently loaded.
+///
+/// The rule, matching the user feedback ("opening a series always starts on
+/// season 1, even when I'm four seasons in"):
+///
+///  1. **Nothing watched** → the first season.
+///  2. **Something watched** → the season of the **most recently watched**
+///     episode (the greatest `watched_at`; a `null` timestamp counts as the
+///     oldest, ties are broken by season/episode number so the choice is
+///     deterministic).
+///  3. If that base season is **completely watched** and a **later** season
+///     exists, the **next** available season is pre-selected — that is where
+///     the user would continue watching (this also covers the common "finished
+///     season 1, haven't started season 2" case).
+///  4. If the base season is the **last** season it stays selected (a fully
+///     finished series lands on its last season).
+///
+/// Returns `null` when [availableSeasons] is empty (nothing to select). The
+/// function is pure and never touches the widget tree.
+int? initialSeasonFor(List<Episode> episodes, List<int> availableSeasons) {
+  if (availableSeasons.isEmpty) return null;
+
+  final seasons = List<int>.of(availableSeasons)..sort();
+
+  Episode? latest;
+  for (final episode in episodes) {
+    if (!episode.watched) continue;
+    if (latest == null || _isMoreRecent(episode, latest)) latest = episode;
+  }
+
+  // Nothing watched yet → the first season (the previous default).
+  if (latest == null) return seasons.first;
+
+  final base = latest.seasonNumber;
+  // Defensive: the base season must be one of the selectable seasons.
+  if (!seasons.contains(base)) return seasons.first;
+
+  final baseEpisodes = <Episode>[
+    for (final episode in episodes)
+      if (episode.seasonNumber == base) episode,
+  ];
+  final fullyWatched =
+      baseEpisodes.isNotEmpty &&
+      baseEpisodes.every((episode) => episode.watched);
+
+  if (fullyWatched) {
+    final later = <int>[
+      for (final season in seasons)
+        if (season > base) season,
+    ];
+    if (later.isNotEmpty) return later.first;
+  }
+
+  return base;
+}
+
+/// Recency order for [initialSeasonFor]: later `watchedAt` first, an unset
+/// timestamp is the oldest, and `season`/`episode` number break ties so the
+/// comparison is a total order.
+bool _isMoreRecent(Episode candidate, Episode current) {
+  final candidateAt = candidate.watchedAt;
+  final currentAt = current.watchedAt;
+  if (candidateAt != null && currentAt != null) {
+    final byTime = candidateAt.compareTo(currentAt);
+    if (byTime != 0) return byTime > 0;
+  } else if (candidateAt != null) {
+    return true;
+  } else if (currentAt != null) {
+    return false;
+  }
+  final bySeason = candidate.seasonNumber.compareTo(current.seasonNumber);
+  if (bySeason != 0) return bySeason > 0;
+  return candidate.episodeNumber > current.episodeNumber;
+}

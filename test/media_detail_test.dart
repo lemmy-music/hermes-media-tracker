@@ -378,6 +378,26 @@ List<Episode> _episodes(
     ),
 ];
 
+/// Seeds a single episode with an explicit watch timestamp (used by the
+/// season-pre-selection tests, which need distinct `watched_at` values across
+/// seasons).
+Episode _episode(
+  String mediaItemId,
+  int seasonNumber,
+  int episodeNumber, {
+  DateTime? watchedAt,
+}) => Episode(
+  id: 'ep-$seasonNumber-$episodeNumber',
+  mediaItemId: mediaItemId,
+  seasonNumber: seasonNumber,
+  episodeNumber: episodeNumber,
+  name: 'Episode $episodeNumber',
+  airDate: DateTime.utc(2004, 9, episodeNumber),
+  runtime: 42,
+  watched: watchedAt != null,
+  watchedAt: watchedAt,
+);
+
 /// Opens the app on a tall surface so the whole detail view fits without
 /// scrolling, then taps the entry with [title].
 Future<void> _openDetail(
@@ -1026,6 +1046,74 @@ void main() {
       await tester.tap(find.byKey(MediaDetailScreen.episodeTileKey(1, 1)));
       await tester.pumpAndSettle();
       expect(inDetail(find.text('No description available.')), findsOneWidget);
+    });
+  });
+
+  group('series season preselection', () {
+    // Seasons 1 and 2 fully watched, season 3 in progress.
+    List<Episode> episodesWithHistory() => [
+      _episode('series-1', 1, 1, watchedAt: DateTime.utc(2026, 1, 1)),
+      _episode('series-1', 1, 2, watchedAt: DateTime.utc(2026, 1, 2)),
+      _episode('series-1', 2, 1, watchedAt: DateTime.utc(2026, 1, 3)),
+      _episode('series-1', 2, 2, watchedAt: DateTime.utc(2026, 1, 4)),
+      _episode('series-1', 3, 1, watchedAt: DateTime.utc(2026, 1, 5)),
+      _episode('series-1', 3, 2),
+    ];
+
+    bool seasonSelected(WidgetTester tester, int season) => tester
+        .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Season $season'))
+        .selected;
+
+    testWidgets('opens on the season of the last watched episode', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([
+        _series(),
+      ], episodes: episodesWithHistory());
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+      );
+
+      // Seasons 1 and 2 are complete, season 3 is mid-watch → season 3.
+      expect(seasonSelected(tester, 3), isTrue);
+      expect(seasonSelected(tester, 1), isFalse);
+      // The episode list shows the pre-selected season.
+      expect(
+        inDetail(find.byKey(MediaDetailScreen.episodeCheckboxKey(3, 1))),
+        findsOneWidget,
+      );
+      expect(
+        inDetail(find.byKey(MediaDetailScreen.episodeCheckboxKey(1, 1))),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a manual season switch is not reset by a rebuild', (
+      tester,
+    ) async {
+      final repository = _FakeRepo([
+        _series(),
+      ], episodes: episodesWithHistory());
+      await _openDetail(
+        tester,
+        items: repository.items,
+        title: 'Lost',
+        repository: repository,
+      );
+      expect(seasonSelected(tester, 3), isTrue);
+
+      // Switch to season 1 by hand.
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Season 1'));
+      await tester.pumpAndSettle();
+      expect(seasonSelected(tester, 1), isTrue);
+
+      // A mutation rebuild (provider notification) must not jump back to 3.
+      await tester.tap(find.byKey(MediaDetailScreen.episodeCheckboxKey(1, 1)));
+      await tester.pumpAndSettle();
+      expect(seasonSelected(tester, 1), isTrue);
     });
   });
 

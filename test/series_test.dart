@@ -363,6 +363,108 @@ void main() {
     });
   });
 
+  group('initialSeasonFor', () {
+    Episode ep(
+      int season,
+      int number, {
+      bool watched = false,
+      DateTime? watchedAt,
+    }) => Episode(
+      mediaItemId: 'series-1',
+      seasonNumber: season,
+      episodeNumber: number,
+      watched: watched,
+      watchedAt: watchedAt,
+    );
+
+    test('nothing watched picks the first season', () {
+      final episodes = [ep(1, 1), ep(1, 2), ep(2, 1)];
+      expect(initialSeasonFor(episodes, <int>[1, 2]), 1);
+      expect(initialSeasonFor(episodes, <int>[2, 3]), 2);
+    });
+
+    test('an empty season list yields null', () {
+      expect(initialSeasonFor(<Episode>[], <int>[]), isNull);
+      expect(initialSeasonFor(<Episode>[ep(1, 1)], <int>[]), isNull);
+    });
+
+    test('a single season is always selected', () {
+      expect(initialSeasonFor(<Episode>[ep(1, 1)], <int>[1]), 1);
+      expect(
+        initialSeasonFor(
+          <Episode>[
+            ep(1, 1, watched: true, watchedAt: DateTime.utc(2026, 1, 1)),
+            ep(1, 2),
+          ],
+          <int>[1],
+        ),
+        1,
+      );
+    });
+
+    test('being mid-season picks that season', () {
+      final episodes = [
+        ep(1, 1, watched: true, watchedAt: DateTime.utc(2026, 1, 1)),
+        ep(1, 2, watched: true, watchedAt: DateTime.utc(2026, 1, 2)),
+        ep(1, 3),
+        ep(1, 4),
+      ];
+      expect(initialSeasonFor(episodes, <int>[1, 2]), 1);
+    });
+
+    test('a fully watched season with a later one picks the next season', () {
+      final episodes = [
+        ep(1, 1, watched: true, watchedAt: DateTime.utc(2026, 1, 1)),
+        ep(1, 2, watched: true, watchedAt: DateTime.utc(2026, 1, 2)),
+        ep(2, 1),
+        ep(2, 2),
+      ];
+      expect(initialSeasonFor(episodes, <int>[1, 2]), 2);
+    });
+
+    test('a fully watched last season stays selected', () {
+      final episodes = [
+        ep(1, 1, watched: true, watchedAt: DateTime.utc(2026, 1, 1)),
+        ep(1, 2, watched: true, watchedAt: DateTime.utc(2026, 1, 2)),
+        ep(2, 1, watched: true, watchedAt: DateTime.utc(2026, 2, 1)),
+        ep(2, 2, watched: true, watchedAt: DateTime.utc(2026, 2, 2)),
+      ];
+      expect(initialSeasonFor(episodes, <int>[1, 2]), 2);
+    });
+
+    test('the greatest watched_at wins, not the highest season', () {
+      final episodes = [
+        // Season 1 is still mid-watch, but its episode was watched last.
+        ep(1, 1, watched: true, watchedAt: DateTime.utc(2026, 6, 1)),
+        ep(1, 2),
+        // Season 2 was finished earlier.
+        ep(2, 1, watched: true, watchedAt: DateTime.utc(2026, 1, 1)),
+      ];
+      expect(initialSeasonFor(episodes, <int>[1, 2]), 1);
+    });
+
+    test('gaps in the season numbering pick the next existing season', () {
+      final episodes = [
+        ep(1, 1, watched: true, watchedAt: DateTime.utc(2026, 1, 1)),
+        ep(1, 2, watched: true, watchedAt: DateTime.utc(2026, 1, 2)),
+        ep(4, 1),
+      ];
+      expect(initialSeasonFor(episodes, <int>[1, 4]), 4);
+    });
+
+    test('a watched episode without a timestamp still counts as watched', () {
+      final episodes = [ep(1, 1, watched: true), ep(2, 1)];
+      // Season 1 is complete (its only episode is watched) → continue on 2.
+      expect(initialSeasonFor(episodes, <int>[1, 2]), 2);
+    });
+
+    test('the base season must be selectable', () {
+      // A watched season that is not in the selectable list → fall back.
+      final episodes = [ep(3, 1, watched: true, watchedAt: DateTime.utc(2026))];
+      expect(initialSeasonFor(episodes, <int>[1, 2]), 1);
+    });
+  });
+
   group('seriesDerivedFields', () {
     test('nothing watched leaves the status untouched', () {
       final fields = seriesDerivedFields(

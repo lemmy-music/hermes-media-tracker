@@ -240,9 +240,16 @@ class _SeriesTrackingSection extends StatefulWidget {
 }
 
 class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
-  /// The season currently shown. `null` until episodes are loaded — then the
-  /// lowest season number wins.
+  /// The season currently shown. `null` until episodes are loaded — then
+  /// [initialSeasonFor] picks the season the user is currently in.
   int? _seasonNumber;
+
+  /// `true` once the pre-selection ran (episodes were available at least once).
+  ///
+  /// Guarded so it happens exactly **once per series**: episodes are loaded
+  /// lazily, so the first builds see an empty list, and a manual season switch
+  /// by the user must never be undone by a later rebuild.
+  bool _seasonPreselected = false;
 
   /// `true` while a mutation is in flight (disables the bulk actions).
   bool _busy = false;
@@ -277,6 +284,7 @@ class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.item.id != item.id) {
       _seasonNumber = null;
+      _seasonPreselected = false;
       _ensureEpisodes();
     }
   }
@@ -462,8 +470,17 @@ class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
 
     // Pick (and keep) a valid season.
     var season = _seasonNumber;
-    if (seasons.isNotEmpty && (season == null || !seasons.contains(season))) {
-      season = seasons.first;
+    if (seasons.isNotEmpty) {
+      if (!_seasonPreselected) {
+        // Episodes just became available (they load lazily): pre-select the
+        // season the user is currently in. Runs exactly once — a later
+        // rebuild (or a manual switch) must never override the user's choice.
+        _seasonPreselected = true;
+        _seasonNumber = initialSeasonFor(allEpisodes, seasons) ?? seasons.first;
+        season = _seasonNumber;
+      } else if (season == null || !seasons.contains(season)) {
+        season = seasons.first;
+      }
     }
 
     return Padding(
