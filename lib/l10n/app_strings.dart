@@ -225,6 +225,15 @@ class AppStrings {
 
   String get alreadyInLibrary => _t('alreadyInLibrary');
 
+  /// Detail-sheet confirmation when the tracked entry is already completed.
+  String get alreadyWatched => _t('alreadyWatched');
+
+  /// Search-result badge: the hit is already in the library (any status).
+  String get badgeInLibrary => _t('badgeInLibrary');
+
+  /// Search-result badge: the hit is completed (watched / read).
+  String get badgeWatched => _t('badgeWatched');
+
   /// Snack bar after [addToWatchlist].
   String get addedToWatchlist => _t('addedToWatchlist');
 
@@ -731,6 +740,9 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'addToWatchlist': 'Zur Watchlist',
     'addAsWatched': 'Schon gesehen',
     'alreadyInLibrary': 'Bereits in deiner Bibliothek',
+    'alreadyWatched': 'Bereits gesehen',
+    'badgeInLibrary': 'In der Bibliothek',
+    'badgeWatched': 'Gesehen',
     'addedToWatchlist': 'Zur Watchlist hinzugefügt',
     'addAsWatchedDone': 'Als gesehen hinzugefügt',
     'addAsWatchedError': 'Konnte nicht als gesehen hinzugefügt werden.',
@@ -1014,6 +1026,9 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'addToWatchlist': 'Add to watchlist',
     'addAsWatched': 'Mark as watched',
     'alreadyInLibrary': 'Already in your library',
+    'alreadyWatched': 'Already watched',
+    'badgeInLibrary': 'In library',
+    'badgeWatched': 'Watched',
     'addedToWatchlist': 'Added to watchlist',
     'addAsWatchedDone': 'Marked as watched',
     'addAsWatchedError': 'Could not add as watched.',

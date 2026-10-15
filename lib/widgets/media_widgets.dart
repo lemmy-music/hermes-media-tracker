@@ -54,6 +54,72 @@ class PillBadge extends StatelessWidget {
   }
 }
 
+/// The two "already tracked" states a search hit can carry.
+enum LibraryBadgeKind {
+  /// The title is in the library (any status).
+  inLibrary,
+
+  /// The title is completed (watched / read).
+  watched,
+}
+
+/// Compact pill marking a search hit as already tracked / watched.
+///
+/// Deliberately **distinct** from the neutral media-kind [PillBadge] (Film /
+/// Serie / Buch) and the plain year text: *in library* uses the primary
+/// container with a `bookmark`, *watched* the tertiary (completion) container
+/// with a `check_circle` — the same palette [StatusBadge] uses, so the two
+/// features read consistently. The label is passed in already localized.
+class LibraryBadge extends StatelessWidget {
+  const LibraryBadge({super.key, required this.kind, required this.label});
+
+  final LibraryBadgeKind kind;
+
+  /// Localized badge text (`AppStrings.badgeInLibrary` / `.badgeWatched`).
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
+    final (Color background, Color foreground, IconData icon) = switch (kind) {
+      LibraryBadgeKind.inLibrary => (
+        cs.primaryContainer,
+        cs.onPrimaryContainer,
+        Icons.bookmark,
+      ),
+      LibraryBadgeKind.watched => (
+        cs.tertiaryContainer,
+        cs.onTertiaryContainer,
+        Icons.check_circle,
+      ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: foreground),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: foreground,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// A pill that colour-codes a media item's tracking status.
 ///
 /// The label is passed in already localized (see `AppStrings.statusLabel`).

@@ -10,6 +10,11 @@ import 'series_rules.dart';
 import 'settings_provider.dart';
 import 'tracking_rules.dart';
 
+/// The two badge states a search hit can carry, derived from one library lookup:
+/// * [inLibrary] — an entry exists, regardless of status.
+/// * [watched] — that entry is [MediaStatus.completed].
+typedef LibraryBadgeState = ({bool inLibrary, bool watched});
+
 /// Outcome of one metadata refresh run.
 ///
 /// The counters describe **media items**, not requests: `total` is the number
@@ -92,7 +97,7 @@ class LibraryProvider extends ChangeNotifier {
   }
 
   /// The `external_source` value of TMDB-backed items.
-  static const String tmdbSource = 'tmdb';
+  static const String tmdbSource = kExternalSourceTmdb;
 
   /// How many TMDB requests run at the same time. TMDB happily serves a
   /// handful of parallel requests, but the run must stay gentle.
@@ -114,6 +119,15 @@ class LibraryProvider extends ChangeNotifier {
   List<MediaItem> _items = const <MediaItem>[];
   bool _loading = true;
   String? _error;
+
+  /// The library indexed by external identity (`mediaIdentity`) — rebuilt once
+  /// whenever [_items] changes, so a search hit's status is an O(1) lookup
+  /// instead of a scan over the whole list per result.
+  Map<String, MediaItem> _byIdentity = const <String, MediaItem>{};
+
+  /// Whether a load has ever been attempted — gates [ensureLoaded] so the
+  /// search screen triggers the initial load at most once.
+  bool _loadAttempted = false;
 
   bool _refreshingMetadata = false;
   int _metadataRefreshDone = 0;
@@ -166,6 +180,7 @@ class LibraryProvider extends ChangeNotifier {
 
   /// Loads (or reloads) the signed-in user's library.
   Future<void> load() async {
+    _loadAttempted = true;
     if (!_loading || _error != null) {
       _loading = true;
       _error = null;
@@ -173,13 +188,90 @@ class LibraryProvider extends ChangeNotifier {
     }
     try {
       final items = await _repository.fetchAll();
-      _items = items;
+      _setItems(items);
       _loading = false;
     } on MediaRepositoryException catch (error) {
       _error = error.message;
       _loading = false;
     }
     _notify();
+  }
+
+  /// Triggers a one-time load when the library has not been loaded yet.
+  ///
+  /// Used by the search screen so its badges work even when the library tab was
+  /// never opened. A no-op once a load has been attempted (or is in flight) —
+  /// repeated or failed loads must never disturb the search.
+  Future<void> ensureLoaded() async {
+    // `load()` sets [_loadAttempted] synchronously before its first await, so a
+    // load that is already in flight also counts as attempted — this can never
+    // fire a second, duplicate load.
+    if (_loadAttempted) return;
+    try {
+      await load();
+    } catch (_) {
+      // Badges simply stay hidden — a failed library load must never disturb
+      // the search (the provider surfaces its own error on the library tab).
+    }
+  }
+
+  // ── search-result badges (Phase 8) ─────────────────────────────────────────
+
+  /// The library entry matching [externalSource] / [externalId], or `null`.
+  ///
+  /// Backed by the pre-built [_byIdentity] index — never scans the list.
+  MediaItem? lookup(String? externalSource, String? externalId) {
+    final key = mediaIdentity(externalSource, externalId);
+    if (key == null) return null;
+    return _byIdentity[key];
+  }
+
+  /// The library entry for a pre-computed identity key (`MediaItem.identityKey`).
+  MediaItem? lookupIdentity(String? identityKey) {
+    if (identityKey == null || identityKey.isEmpty) return null;
+    return _byIdentity[identityKey];
+  }
+
+  /// The two badge states for a search hit: is it already tracked, and is it
+  /// completed (watched / read)?
+  ///
+  /// `watched` is only ever `true` when an entry exists **and** its status is
+  /// [MediaStatus.completed]; a missing entry yields `(false, false)`.
+  LibraryBadgeState badgeState(String? externalSource, String? externalId) {
+    final item = lookup(externalSource, externalId);
+    return (
+      inLibrary: item != null,
+      watched: item?.status == MediaStatus.completed,
+    );
+  }
+
+  /// Like [badgeState] but for a pre-computed identity key.
+  LibraryBadgeState badgeStateForIdentity(String? identityKey) {
+    final item = lookupIdentity(identityKey);
+    return (
+      inLibrary: item != null,
+      watched: item?.status == MediaStatus.completed,
+    );
+  }
+
+  /// Replaces the loaded list and rebuilds the identity index in one step —
+  /// every write to [_items] goes through here so the index never goes stale.
+  void _setItems(List<MediaItem> items) {
+    _items = items;
+    _rebuildIndex();
+  }
+
+  /// Builds the identity index from [_items]. Entries without a usable
+  /// `(external_source, external_id)` pair (manual adds) are skipped; the first
+  /// occurrence of a key wins (the DB guarantees uniqueness anyway).
+  void _rebuildIndex() {
+    final index = <String, MediaItem>{};
+    for (final item in _items) {
+      final key = item.identityKey;
+      if (key == null) continue;
+      index.putIfAbsent(key, () => item);
+    }
+    _byIdentity = index;
   }
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -235,7 +327,7 @@ class LibraryProvider extends ChangeNotifier {
   Future<void> deleteItem(MediaItem item) async {
     final id = _requireId(item);
     await _repository.delete(id);
-    _items = _items.where((candidate) => candidate.id != id).toList();
+    _setItems(_items.where((candidate) => candidate.id != id).toList());
     _notify();
   }
 
@@ -286,10 +378,10 @@ class LibraryProvider extends ChangeNotifier {
     final index = _items.indexWhere((candidate) => candidate.id == id);
     if (index == -1) {
       // Not in the list (e.g. loaded elsewhere) — append so it stays visible.
-      _items = <MediaItem>[..._items, item];
+      _setItems(<MediaItem>[..._items, item]);
     } else {
       final next = List<MediaItem>.of(_items)..[index] = item;
-      _items = next;
+      _setItems(next);
     }
     _notify();
   }

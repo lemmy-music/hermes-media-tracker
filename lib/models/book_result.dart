@@ -129,6 +129,12 @@ class BookResult {
   String get workId =>
       key.startsWith('/works/') ? key.substring('/works/'.length) : key;
 
+  /// The canonical identity key (`mediaIdentity`) of this work — identical to
+  /// the `external_id` [toMediaItem] stores, so an ISBN hit (which is resolved
+  /// to its **work** key, see [OpenLibraryClient.lookupByIsbn]) matches a later
+  /// title search and vice versa.
+  String? get identityKey => mediaIdentity(kExternalSourceOpenLibrary, key);
+
   /// Cover URL for list thumbnails, or `null` when the hit has no cover.
   String? get coverUrl => OpenLibraryImages.coverById(coverId);
 
@@ -160,7 +166,7 @@ class BookResult {
     releaseYear: releaseYear ?? firstPublishYear,
     overview: description,
     posterUrl: coverUrl ?? this.coverUrl,
-    externalSource: 'openlibrary',
+    externalSource: kExternalSourceOpenLibrary,
     externalId: key,
     totalPages: totalPages ?? pageCount,
     isbn: isbn ?? this.isbn,

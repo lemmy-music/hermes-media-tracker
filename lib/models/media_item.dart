@@ -47,6 +47,28 @@ enum MediaStatus {
   }
 }
 
+/// The `external_source` value of TMDB-backed items (movies / series).
+const String kExternalSourceTmdb = 'tmdb';
+
+/// The `external_source` value of OpenLibrary-backed items (books).
+const String kExternalSourceOpenLibrary = 'openlibrary';
+
+/// The canonical identity key of an externally sourced title — `'<source>:<id>'`.
+///
+/// A library entry is uniquely identified by its `(external_source,
+/// external_id)` pair (the DB enforces this with a unique index). This **single**
+/// helper is used both when a search hit is **stored** ([MediaItem]) and when it
+/// is **looked up** again (the search-screen badges), so both sides can never
+/// drift apart.
+///
+/// Returns `null` when either part is missing / empty, so a manually added entry
+/// (no external source) never collides with a search hit.
+String? mediaIdentity(String? externalSource, String? externalId) {
+  if (externalSource == null || externalSource.isEmpty) return null;
+  if (externalId == null || externalId.isEmpty) return null;
+  return '$externalSource:$externalId';
+}
+
 /// A row of `public.media_items` — metadata snapshot *and* tracking state.
 ///
 /// `user_id` is deliberately **not** part of the model: ownership is injected
@@ -153,6 +175,10 @@ class MediaItem {
 
   /// Whether a poster is available for the list thumbnail.
   bool get hasPoster => posterUrl != null && posterUrl!.isNotEmpty;
+
+  /// The canonical external identity of this item (`mediaIdentity`) — the key
+  /// under which the library is indexed for the search-result badges.
+  String? get identityKey => mediaIdentity(externalSource, externalId);
 
   MediaItem copyWith({
     String? id,

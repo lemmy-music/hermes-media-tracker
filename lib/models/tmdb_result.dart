@@ -118,6 +118,13 @@ class TmdbSearchResult {
   /// Full poster URL (`w342`), or `null` when the API returned no artwork.
   String? get posterUrl => TmdbImages.poster(posterPath);
 
+  /// The stored `external_id` — the TMDB id as a string.
+  String get externalId => '$id';
+
+  /// The canonical identity key (`mediaIdentity`) used to match this hit to a
+  /// library entry — identical to the value [TmdbDetails.toMediaItem] stores.
+  String? get identityKey => mediaIdentity(kExternalSourceTmdb, externalId);
+
   /// A one-line teaser for list rows (first [maxLength] characters).
   String? get shortOverview {
     final text = overview?.trim();
@@ -140,6 +147,13 @@ abstract class TmdbDetails {
   String? get overview;
 
   String? get posterUrl => TmdbImages.poster(posterPath);
+
+  /// The stored `external_id` — the TMDB id as a string.
+  String get externalId => '$id';
+
+  /// The canonical identity key (`mediaIdentity`) of this title — the **only**
+  /// key used to match a stored [MediaItem] back to a search hit.
+  String? get identityKey => mediaIdentity(kExternalSourceTmdb, externalId);
 
   /// Builds the [MediaItem] that "Add to library" persists.
   MediaItem toMediaItem();
@@ -196,8 +210,8 @@ class TmdbMovieDetails extends TmdbDetails {
     releaseYear: year,
     overview: overview,
     posterUrl: posterUrl,
-    externalSource: 'tmdb',
-    externalId: '$id',
+    externalSource: kExternalSourceTmdb,
+    externalId: externalId,
     runtime: runtime,
   );
 }
@@ -270,8 +284,8 @@ class TmdbTvDetails extends TmdbDetails {
     releaseYear: year,
     overview: overview,
     posterUrl: posterUrl,
-    externalSource: 'tmdb',
-    externalId: '$id',
+    externalSource: kExternalSourceTmdb,
+    externalId: externalId,
     totalSeasons: numberOfSeasons,
     totalEpisodes: numberOfEpisodes,
   );

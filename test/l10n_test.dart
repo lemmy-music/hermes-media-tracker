@@ -125,6 +125,34 @@ void main() {
     expect(en.isbnNotFoundMessage('9780306406157'), contains('9780306406157'));
   });
 
+  test(
+    'search-result badge and already-watched strings exist in both languages',
+    () {
+      const de = AppStrings(AppLanguage.de);
+      const en = AppStrings(AppLanguage.en);
+
+      expect(de.badgeInLibrary, 'In der Bibliothek');
+      expect(de.badgeWatched, 'Gesehen');
+      expect(en.badgeInLibrary, 'In library');
+      expect(en.badgeWatched, 'Watched');
+      expect(de.alreadyWatched, 'Bereits gesehen');
+      expect(en.alreadyWatched, 'Already watched');
+
+      // None of them fall back to the raw key.
+      for (final value in <String>[
+        de.badgeInLibrary,
+        de.badgeWatched,
+        de.alreadyWatched,
+        en.badgeInLibrary,
+        en.badgeWatched,
+        en.alreadyWatched,
+      ]) {
+        expect(value.trim(), isNotEmpty);
+      }
+      expect(de.badgeInLibrary, isNot(en.badgeInLibrary));
+    },
+  );
+
   test('parameterized strings inject the value', () {
     expect(
       AppStrings(AppLanguage.en).sentLinkTo('me@example.com'),

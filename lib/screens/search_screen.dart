@@ -8,6 +8,7 @@ import '../l10n/app_strings.dart';
 import '../models/book_result.dart';
 import '../models/media_item.dart';
 import '../models/tmdb_result.dart';
+import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/isbn.dart';
 import '../services/openlibrary_client.dart';
@@ -23,6 +24,11 @@ import '../widgets/settings_button.dart';
 /// of these hits and rendered generically.
 sealed class SearchHit {
   const SearchHit();
+
+  /// The canonical external identity of this hit (`mediaIdentity`) — used to
+  /// look the title up in the user's library for the status badges. `null` for
+  /// a hit that cannot be matched (never the case for TMDB / OpenLibrary hits).
+  String? get identityKey;
 }
 
 /// A movie or series hit from TMDB.
@@ -30,6 +36,9 @@ class TmdbHit extends SearchHit {
   const TmdbHit(this.result);
 
   final TmdbSearchResult result;
+
+  @override
+  String? get identityKey => result.identityKey;
 }
 
 /// A book (work) hit from OpenLibrary.
@@ -37,6 +46,9 @@ class BookHit extends SearchHit {
   const BookHit(this.result);
 
   final BookResult result;
+
+  @override
+  String? get identityKey => result.identityKey;
 }
 
 /// Search tab — finds movies, series (TMDB) and books (OpenLibrary).
@@ -77,6 +89,19 @@ class _SearchScreenState extends State<SearchScreen> {
   /// The ISBN that was looked up without a hit — drives the dedicated
   /// "no book for this ISBN" empty state. `null` for a normal search.
   String? _isbnNotFound;
+
+  @override
+  void initState() {
+    super.initState();
+    // Make the library available for the status badges even when the library
+    // tab was never opened. Deferred to after the first frame (a provider
+    // notify during build is not allowed); a failed load is swallowed and the
+    // badges simply stay hidden.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<LibraryProvider>().ensureLoaded();
+    });
+  }
 
   @override
   void dispose() {
@@ -464,6 +489,11 @@ class _SearchResultTile extends StatelessWidget {
     final strings = context.strings;
     final posterHeight = posterWidth * 3 / 2;
 
+    // One O(1) library lookup per hit drives the up-to-two status badges.
+    final libraryState = context.watch<LibraryProvider>().badgeStateForIdentity(
+      hit.identityKey,
+    );
+
     final (
       String title,
       int? year,
@@ -527,6 +557,18 @@ class _SearchResultTile extends StatelessWidget {
                       PillBadge(icon: icon, label: badge),
                       if (year != null)
                         Text('$year', style: theme.textTheme.bodySmall),
+                      // At most two badges; both omitted when the title is not
+                      // tracked so an untracked hit stays visually unchanged.
+                      if (libraryState.inLibrary)
+                        LibraryBadge(
+                          kind: LibraryBadgeKind.inLibrary,
+                          label: strings.badgeInLibrary,
+                        ),
+                      if (libraryState.watched)
+                        LibraryBadge(
+                          kind: LibraryBadgeKind.watched,
+                          label: strings.badgeWatched,
+                        ),
                     ],
                   ),
                   if (teaser != null) ...[

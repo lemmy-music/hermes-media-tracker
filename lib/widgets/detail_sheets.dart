@@ -33,6 +33,10 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
   bool _watchlistBusy = false;
   bool _watchedBusy = false;
   bool _added = false;
+
+  /// Status of the already-tracked entry (when [_added] came from the library),
+  /// so the sheet can say "Already watched" for a completed title.
+  MediaStatus? _addedStatus;
   String? _error;
 
   bool get _busy => _watchlistBusy || _watchedBusy;
@@ -59,12 +63,14 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
         language: language,
       );
       bool alreadyTracked = false;
+      MediaStatus? existingStatus;
       try {
         final existing = await repository.findByExternal(
-          'tmdb',
-          '${widget.result.id}',
+          kExternalSourceTmdb,
+          widget.result.externalId,
         );
         alreadyTracked = existing != null;
+        existingStatus = existing?.status;
       } on MediaRepositoryException {
         // Non-fatal: the insert's unique-index guard still protects us.
       }
@@ -72,6 +78,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
       setState(() {
         _details = details;
         _added = alreadyTracked;
+        _addedStatus = existingStatus;
         _loading = false;
       });
     } on TmdbException catch (error) {
@@ -98,6 +105,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
       if (!mounted) return;
       setState(() {
         _added = true;
+        _addedStatus = MediaStatus.planned;
         _watchlistBusy = false;
       });
       messenger.showSnackBar(SnackBar(content: Text(strings.addedToWatchlist)));
@@ -130,6 +138,9 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
       if (!mounted) return;
       setState(() {
         _added = true;
+        _addedStatus = result == AddAsWatchedResult.done
+            ? MediaStatus.completed
+            : MediaStatus.planned;
         _watchedBusy = false;
       });
       messenger.showSnackBar(
@@ -158,6 +169,9 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
     void Function() applyState,
   ) {
     final alreadyInLibrary = isAlreadyInLibraryError(error);
+    // A duplicate leaves the tracked status unknown to this sheet → the generic
+    // "already in your library" wording.
+    if (alreadyInLibrary) _addedStatus = null;
     if (mounted) setState(applyState);
     messenger.showSnackBar(
       SnackBar(
@@ -263,6 +277,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
 
     return _AddActions(
       added: _added,
+      completed: _addedStatus == MediaStatus.completed,
       watchlistBusy: _watchlistBusy,
       watchedBusy: _watchedBusy,
       onWatchlist: _addToWatchlist,
@@ -291,6 +306,10 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
   bool _watchlistBusy = false;
   bool _watchedBusy = false;
   bool _added = false;
+
+  /// Status of the already-tracked entry (when [_added] came from the library),
+  /// so the sheet can say "Already watched" for a completed title.
+  MediaStatus? _addedStatus;
   String? _error;
 
   bool get _busy => _watchlistBusy || _watchedBusy;
@@ -313,12 +332,14 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
     try {
       final details = await client.fetchDetails(widget.result.key);
       bool alreadyTracked = false;
+      MediaStatus? existingStatus;
       try {
         final existing = await repository.findByExternal(
-          'openlibrary',
+          kExternalSourceOpenLibrary,
           widget.result.key,
         );
         alreadyTracked = existing != null;
+        existingStatus = existing?.status;
       } on MediaRepositoryException {
         // Non-fatal: the insert's unique-index guard still protects us.
       }
@@ -326,6 +347,7 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
       setState(() {
         _details = details;
         _added = alreadyTracked;
+        _addedStatus = existingStatus;
         _loading = false;
       });
     } on OpenLibraryException catch (error) {
@@ -361,6 +383,7 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
       if (!mounted) return;
       setState(() {
         _added = true;
+        _addedStatus = MediaStatus.planned;
         _watchlistBusy = false;
       });
       messenger.showSnackBar(SnackBar(content: Text(strings.addedToWatchlist)));
@@ -393,6 +416,9 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
       if (!mounted) return;
       setState(() {
         _added = true;
+        _addedStatus = result == AddAsWatchedResult.done
+            ? MediaStatus.completed
+            : MediaStatus.planned;
         _watchedBusy = false;
       });
       messenger.showSnackBar(
@@ -421,6 +447,9 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
     void Function() applyState,
   ) {
     final alreadyInLibrary = isAlreadyInLibraryError(error);
+    // A duplicate leaves the tracked status unknown to this sheet → the generic
+    // "already in your library" wording.
+    if (alreadyInLibrary) _addedStatus = null;
     if (mounted) setState(applyState);
     messenger.showSnackBar(
       SnackBar(
@@ -527,6 +556,7 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
 
     return _AddActions(
       added: _added,
+      completed: _addedStatus == MediaStatus.completed,
       watchlistBusy: _watchlistBusy,
       watchedBusy: _watchedBusy,
       onWatchlist: _addToWatchlist,
@@ -649,6 +679,7 @@ Future<AddAsWatchedResult> insertAsWatched(
 class _AddActions extends StatelessWidget {
   const _AddActions({
     required this.added,
+    required this.completed,
     required this.watchlistBusy,
     required this.watchedBusy,
     required this.onWatchlist,
@@ -656,6 +687,10 @@ class _AddActions extends StatelessWidget {
   });
 
   final bool added;
+
+  /// `true` when the already-tracked entry is completed — the confirmation then
+  /// reads "Already watched" instead of "Already in your library".
+  final bool completed;
   final bool watchlistBusy;
   final bool watchedBusy;
   final VoidCallback onWatchlist;
@@ -682,7 +717,7 @@ class _AddActions extends StatelessWidget {
           const SizedBox(width: 8),
           Flexible(
             child: Text(
-              strings.alreadyInLibrary,
+              completed ? strings.alreadyWatched : strings.alreadyInLibrary,
               textAlign: TextAlign.center,
               style: theme.textTheme.titleMedium?.copyWith(color: cs.primary),
             ),

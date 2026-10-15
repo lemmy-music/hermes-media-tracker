@@ -14,7 +14,7 @@ A personal tracker for **movies, series and books** — search a title, add it t
 
 ## Features
 
-**Search & add** — search movies and series via [TMDB](https://www.themoviedb.org/) and books via [OpenLibrary](https://openlibrary.org/); covers, descriptions and metadata are pre-filled. Duplicate detection keeps the same title out of your library twice. An **ISBN** (ISBN-10 or ISBN-13, check digit validated) can be typed straight into the search field — including dashes, spaces and an `ISBN` prefix.
+**Search & add** — search movies and series via [TMDB](https://www.themoviedb.org/) and books via [OpenLibrary](https://openlibrary.org/); covers, descriptions and metadata are pre-filled. Duplicate detection keeps the same title out of your library twice. An **ISBN** (ISBN-10 or ISBN-13, check digit validated) can be typed straight into the search field — including dashes, spaces and an `ISBN` prefix. Each result already shows its **library status**: an **"In library"** badge when you track the title and a **"Watched"** badge when it is completed (both, if it is), so you can see at a glance what you already have before tapping.
 
 **Track by media type, at the right granularity:**
 
@@ -140,6 +140,8 @@ Pushing to `main` triggers [`.github/workflows/build-web.yml`](.github/workflows
 | 5c | Reading log (exact pages per period) | ✅ |
 | 6a | ISBN text search | ✅ |
 | 6b | ISBN barcode scanner (camera) | ⏸️ deferred to a native build |
+| 7 | Bulk catch-up prompts, add-as-watched from search | ✅ |
+| 8 | Library / watched status badges in search results | ✅ |
 
 Detailed vision, decisions and known limitations: [`PROJECT.md`](PROJECT.md).
 

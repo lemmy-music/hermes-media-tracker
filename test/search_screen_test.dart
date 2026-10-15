@@ -1110,5 +1110,30 @@ void main() {
       expect(find.text('Add to watchlist'), findsNothing);
       expect(find.text(watched), findsNothing);
     });
+
+    testWidgets('an already completed entry reads "Already watched"', (
+      tester,
+    ) async {
+      final repository = _FakeRepository(
+        existing: const MediaItem(
+          id: 'existing',
+          kind: MediaKind.movie,
+          title: 'Inception',
+          externalSource: 'tmdb',
+          externalId: '27205',
+          status: MediaStatus.completed,
+        ),
+      );
+      await _pumpSearch(
+        tester,
+        tmdb: _FakeTmdb(results: const [_hit]),
+        repository: repository,
+      );
+      await openHit(tester, 'inception', 'Inception');
+
+      expect(find.text('Already watched'), findsOneWidget);
+      expect(find.text('Already in your library'), findsNothing);
+      expect(find.text(watched), findsNothing);
+    });
   });
 }
