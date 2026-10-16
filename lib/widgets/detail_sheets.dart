@@ -860,7 +860,7 @@ class _AddActions extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: open,
               icon: const Icon(Icons.open_in_new),
-              label: Text(strings.open),
+              label: Text(strings.openInLibrary),
             ),
           ],
         ],

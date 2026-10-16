@@ -392,8 +392,8 @@ void main() {
     });
 
     test('the open action is localized', () {
-      expect(de.open, 'Öffnen');
-      expect(en.open, 'Open');
+      expect(de.openInLibrary, 'In Bibliothek öffnen');
+      expect(en.openInLibrary, 'Open in library');
     });
 
     test('the catch-up dialogs are plural-aware in both languages', () {

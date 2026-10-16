@@ -273,9 +273,8 @@ class AppStrings {
   /// Snack bar after [addToWatchlist].
   String get addedToWatchlist => _t('addedToWatchlist');
 
-  /// Snack-bar action after a successful add: jump straight into the new
-  /// entry's detail view (to enter "where am I").
-  String get open => _t('open');
+  /// In-sheet action after a successful add: opens the new entry's detail view.
+  String get openInLibrary => _t('openInLibrary');
 
   /// Snack bar after [addAsWatched].
   String get addAsWatchedDone => _t('addAsWatchedDone');
@@ -794,7 +793,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'badgeInLibrary': 'In der Bibliothek',
     'badgeWatched': 'Gesehen',
     'addedToWatchlist': 'Zur Watchlist hinzugefügt',
-    'open': 'Öffnen',
+    'openInLibrary': 'In Bibliothek öffnen',
     'addAsWatchedDone': 'Als gesehen hinzugefügt',
     'addAsWatchedError': 'Konnte nicht als gesehen hinzugefügt werden.',
     'addAsWatchedEpisodesError':
@@ -1091,7 +1090,7 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'badgeInLibrary': 'In library',
     'badgeWatched': 'Watched',
     'addedToWatchlist': 'Added to watchlist',
-    'open': 'Open',
+    'openInLibrary': 'Open in library',
     'addAsWatchedDone': 'Marked as watched',
     'addAsWatchedError': 'Could not add as watched.',
     'addAsWatchedEpisodesError':

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:media_tracker/l10n/app_language.dart';
+import 'package:media_tracker/l10n/app_strings.dart';
 import 'package:media_tracker/main.dart';
 import 'package:media_tracker/models/book_result.dart';
 import 'package:media_tracker/models/episode.dart';
@@ -1228,11 +1229,16 @@ void main() {
       // state — not a snack bar (which would hide behind the modal barrier).
       expect(find.byType(TmdbDetailSheet), findsOneWidget);
       expect(find.text('Already in your library'), findsOneWidget);
-      expect(find.text('Open'), findsOneWidget);
+      expect(
+        find.text(const AppStrings(AppLanguage.en).openInLibrary),
+        findsOneWidget,
+      );
       expect(find.byType(SnackBarAction), findsNothing);
       expect(find.byKey(MediaDetailScreen.deleteButtonKey), findsNothing);
 
-      await tester.tap(find.text('Open'));
+      await tester.tap(
+        find.text(const AppStrings(AppLanguage.en).openInLibrary),
+      );
       await tester.pumpAndSettle();
 
       // Sheet closed, detail view of the right (just added) item is open.
@@ -1262,10 +1268,15 @@ void main() {
 
       expect(find.byType(TmdbDetailSheet), findsOneWidget);
       expect(find.text('Already watched'), findsOneWidget);
-      expect(find.text('Open'), findsOneWidget);
+      expect(
+        find.text(const AppStrings(AppLanguage.en).openInLibrary),
+        findsOneWidget,
+      );
       expect(find.byType(SnackBarAction), findsNothing);
 
-      await tester.tap(find.text('Open'));
+      await tester.tap(
+        find.text(const AppStrings(AppLanguage.en).openInLibrary),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(TmdbDetailSheet), findsNothing);
@@ -1300,10 +1311,15 @@ void main() {
 
       expect(find.byType(BookDetailSheet), findsOneWidget);
       expect(find.text('Already in your library'), findsOneWidget);
-      expect(find.text('Open'), findsOneWidget);
+      expect(
+        find.text(const AppStrings(AppLanguage.en).openInLibrary),
+        findsOneWidget,
+      );
       expect(find.byType(SnackBarAction), findsNothing);
 
-      await tester.tap(find.text('Open'));
+      await tester.tap(
+        find.text(const AppStrings(AppLanguage.en).openInLibrary),
+      );
       await tester.pumpAndSettle();
 
       expect(find.byType(BookDetailSheet), findsNothing);
