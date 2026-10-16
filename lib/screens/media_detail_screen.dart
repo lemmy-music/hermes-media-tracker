@@ -161,6 +161,7 @@ class _Header extends StatelessWidget {
               height: 270,
               iconSize: 64,
               borderRadius: 14,
+              cacheWidth: 360, // 2× the 180 px header poster
             ),
           ),
           const SizedBox(height: 16),
@@ -742,6 +743,7 @@ class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
                           height: 44,
                           iconSize: 20,
                           borderRadius: 6,
+                          cacheWidth: 144, // 2× the 72 px episode still
                         ),
                         const SizedBox(width: 10),
                       ],
@@ -831,6 +833,7 @@ class _SeriesTrackingSectionState extends State<_SeriesTrackingSection> {
                   height: 135,
                   iconSize: 40,
                   borderRadius: 10,
+                  cacheWidth: 480, // 2× the 240 px expanded still
                 ),
               ),
               const SizedBox(height: 12),

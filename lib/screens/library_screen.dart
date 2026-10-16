@@ -187,18 +187,22 @@ class LibraryScreen extends StatelessWidget {
                 ),
                 delegate: SliverChildBuilderDelegate((context, index) {
                   final filter = LibraryScreen.tiles[index];
-                  return CategoryBanner(
-                    key: LibraryScreen.tileKeyFor(filter),
-                    icon: filter.kind == null
-                        ? Icons.video_library_outlined
-                        : mediaKindIcon(filter.kind!),
-                    label: strings.libraryTileLabel(filter),
-                    countLabel: strings.libraryTileCount(
-                      filter,
-                      counts[filter] ?? 0,
+                  // Each banner is its own repaint island: a repaint of one card
+                  // never re-rasterises the whole grid.
+                  return RepaintBoundary(
+                    child: CategoryBanner(
+                      key: LibraryScreen.tileKeyFor(filter),
+                      icon: filter.kind == null
+                          ? Icons.video_library_outlined
+                          : mediaKindIcon(filter.kind!),
+                      label: strings.libraryTileLabel(filter),
+                      countLabel: strings.libraryTileCount(
+                        filter,
+                        counts[filter] ?? 0,
+                      ),
+                      artwork: selectCategoryArtwork(items, filter: filter),
+                      onTap: () => _openList(context, filter),
                     ),
-                    artwork: selectCategoryArtwork(items, filter: filter),
-                    onTap: () => _openList(context, filter),
                   );
                 }, childCount: LibraryScreen.tiles.length),
               ),

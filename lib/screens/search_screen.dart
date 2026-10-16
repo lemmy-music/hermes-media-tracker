@@ -445,10 +445,13 @@ class _SearchScreenState extends State<SearchScreen> {
               Divider(height: 1, indent: 16 + posterWidth + 14),
           itemBuilder: (context, index) {
             final hit = _results[index];
-            return _SearchResultTile(
-              hit: hit,
-              posterWidth: posterWidth,
-              onTap: () => _openDetail(hit),
+            return RepaintBoundary(
+              // Each hit is its own repaint island (badges / image load).
+              child: _SearchResultTile(
+                hit: hit,
+                posterWidth: posterWidth,
+                onTap: () => _openDetail(hit),
+              ),
             );
           },
         );
@@ -536,6 +539,8 @@ class _SearchResultTile extends StatelessWidget {
               height: posterHeight,
               iconSize: posterWidth * 0.35,
               borderRadius: 10,
+              // ~2× the painted width — a retina reserve, no more.
+              cacheWidth: (posterWidth * 2).round(),
             ),
             const SizedBox(width: 14),
             Expanded(

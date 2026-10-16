@@ -238,6 +238,7 @@ class _TmdbDetailSheetState extends State<TmdbDetailSheet> {
         height: 252,
         iconSize: 56,
         borderRadius: 14,
+        cacheWidth: 336, // 2× the 168 px sheet poster
       ),
       title: title,
       badges: <Widget>[
@@ -557,6 +558,7 @@ class _BookDetailSheetState extends State<BookDetailSheet> {
         height: 252,
         iconSize: 56,
         borderRadius: 14,
+        cacheWidth: 336, // 2× the 168 px sheet cover
       ),
       title: result.title,
       badges: <Widget>[
