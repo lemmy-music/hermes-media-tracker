@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../services/library_filter.dart';
@@ -18,12 +20,6 @@ import 'media_widgets.dart';
 ///
 /// The whole card is the tap target: tapping it opens the reused library list
 /// preselected to the category (see `LibraryScreen`).
-///
-/// **Performance:** the atmospheric background is *not* a blur. A real
-/// `ImageFilter.blur` full-bleed on the hero is GPU-heavy (especially with
-/// CanvasKit on mobile browsers), so the same cover is instead loaded at a tiny
-/// decode size ([cacheWidth] 64) and stretched to fill with `BoxFit.cover` +
-/// [FilterQuality.low] — an upscaled thumbnail looks softly blurred for free.
 class CategoryBanner extends StatelessWidget {
   const CategoryBanner({
     super.key,
@@ -138,8 +134,7 @@ class CategoryBanner extends StatelessWidget {
 }
 
 /// Background layer: theme gradient, plus — when a cover exists — a dimmed,
-/// softly-blurred-looking (but free: tiny decode upscaled) full-bleed hero and
-/// the fanned deck of covers on the right.
+/// softly blurred full-bleed hero and the fanned deck of covers on the right.
 class _Background extends StatelessWidget {
   const _Background({required this.artwork, required this.icon});
 
@@ -181,20 +176,20 @@ class _Background extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         DecoratedBox(decoration: gradient),
-        // The newest cover as the atmospheric background. Deliberately *not*
-        // blurred: decoding it at 64 px and stretching it to full-bleed with a
-        // cheap resample gives the same soft look with no GPU filter cost.
+        // The newest cover, heavily blurred + dimmed, as the atmospheric
+        // background so the crisp deck below never reads as a duplicate.
         Positioned.fill(
-          child: ColorFiltered(
-            colorFilter: ColorFilter.mode(
-              Colors.black.withValues(alpha: 0.45),
-              BlendMode.darken,
-            ),
-            child: CoverImage(
-              url: artwork.heroUrl,
-              cacheWidth: 64,
-              filterQuality: FilterQuality.low,
-              placeholderBuilder: (_) => const SizedBox.shrink(),
+          child: ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                Colors.black.withValues(alpha: 0.45),
+                BlendMode.darken,
+              ),
+              child: CoverImage(
+                url: artwork.heroUrl,
+                placeholderBuilder: (_) => const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
@@ -208,20 +203,17 @@ class _Background extends StatelessWidget {
 }
 
 /// The static fan: the hero cover in front, with one or two older covers
-/// behind it, each offset up / to the right, tilted and dimmed.
+/// behind it, each offset up / to the right, slightly tilted and dimmed.
 ///
-/// Deliberately static — no animation, no GPU filters. The layers are
-/// separated by **position, rotation, a thin bright rim and a faint light
-/// wash**, so the stack reads unmistakably as a fanned deck while staying pure
-/// paint work (no blur/shader filters, no opacity save-layers). Cards are
-/// taller than the banner, so their edges bleed off the top / bottom and are
-/// trimmed by the banner's [ClipRRect].
+/// Deliberately static — no animation. Cards are taller than the banner, so
+/// their edges bleed off the top / bottom and are trimmed by the banner's
+/// [ClipRRect].
 class _FanDeck extends StatelessWidget {
   const _FanDeck({required this.artwork});
 
   static const double _cardWidth = 104;
   static const double _cardHeight = 176;
-  static const double _deckWidth = 156;
+  static const double _deckWidth = 148;
 
   final CategoryArtwork artwork;
 
@@ -244,67 +236,34 @@ class _FanDeck extends StatelessWidget {
   }
 
   Widget _card({required String? url, required int depth}) {
-    final radius = BorderRadius.circular(12);
-    final image = CoverImage(
-      url: url,
-      cacheWidth: 208, // 2× the 104 px deck card
-      placeholderBuilder: (_) => const SizedBox.shrink(),
-    );
-
-    // The crisp hero, front and centred.
-    if (depth == 0) {
-      return Positioned(
-        right: 0,
-        bottom: 0,
-        child: ClipRRect(
-          borderRadius: radius,
-          child: SizedBox(width: _cardWidth, height: _cardHeight, child: image),
-        ),
-      );
-    }
-
-    // Behind-cards: pushed further right + up and tilted harder, so the stack
-    // clearly reads as a *fan*. The thin bright rim + faint light wash keep
-    // each layer's edge legible behind the front card.
-    return Positioned(
-      right: -depth * 16.0,
-      bottom: depth * 14.0,
-      child: Transform.rotate(
-        angle: depth * 0.12,
-        child: SizedBox(
-          width: _cardWidth,
-          height: _cardHeight,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRRect(
-                borderRadius: radius,
-                child: ColorFiltered(
-                  colorFilter: ColorFilter.mode(
-                    Colors.black.withValues(alpha: depth == 1 ? 0.30 : 0.48),
-                    BlendMode.darken,
-                  ),
-                  child: image,
-                ),
-              ),
-              // Light wash (cheap blended fill, not an opacity layer) + bright
-              // rim drawn on top so the stacked edge stays visible.
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(
-                    alpha: depth == 1 ? 0.06 : 0.10,
-                  ),
-                  borderRadius: radius,
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.65),
-                    width: 1.5,
-                  ),
-                ),
-              ),
-            ],
-          ),
+    final card = ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        width: _cardWidth,
+        height: _cardHeight,
+        child: CoverImage(
+          url: url,
+          placeholderBuilder: (_) => const SizedBox.shrink(),
         ),
       ),
+    );
+
+    // Behind-cards are dimmed and pushed right + up, so only their top / right
+    // edges peek past the crisp hero; the banner clips whatever leaves the box.
+    final Widget composed = depth == 0
+        ? card
+        : ColorFiltered(
+            colorFilter: ColorFilter.mode(
+              Colors.black.withValues(alpha: depth == 1 ? 0.35 : 0.55),
+              BlendMode.darken,
+            ),
+            child: card,
+          );
+
+    return Positioned(
+      right: -depth * 14.0,
+      bottom: depth * 10.0,
+      child: Transform.rotate(angle: depth * 0.08, child: composed),
     );
   }
 }

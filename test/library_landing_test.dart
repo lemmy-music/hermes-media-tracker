@@ -86,18 +86,12 @@ MediaItem _book(String title, {String? posterUrl, DateTime? createdAt}) =>
 
 /// Finds an [Image] backed by a [NetworkImage] for [url] — the banner renders
 /// the same cover in several layers, so this matches one or more.
-///
-/// `Image.network(..., cacheWidth: …)` wraps the provider in a [ResizeImage],
-/// so the URL is resolved through that wrapper too.
 Finder _imageWithUrl(String url) => find.byWidgetPredicate(
-  (widget) => widget is Image && _networkUrlOf(widget.image) == url,
+  (widget) =>
+      widget is Image &&
+      widget.image is NetworkImage &&
+      (widget.image as NetworkImage).url == url,
 );
-
-String? _networkUrlOf(ImageProvider<Object>? provider) {
-  if (provider is NetworkImage) return provider.url;
-  if (provider is ResizeImage) return _networkUrlOf(provider.imageProvider);
-  return null;
-}
 
 Future<void> _pump(
   WidgetTester tester, {

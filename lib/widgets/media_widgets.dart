@@ -183,25 +183,12 @@ class StatusBadge extends StatelessWidget {
 /// [placeholderBuilder] instead of throwing. [PosterThumbnail] and the category
 /// banners (`CategoryBanner`) both build on this, so cover handling can never
 /// drift between the two.
-///
-/// **[cacheWidth]** bounds the decode size: the network bytes are decoded (and
-/// held in memory) at most [cacheWidth] physical pixels wide — the height
-/// follows from the file's aspect ratio. Without it Flutter decodes every cover
-/// at its **full file resolution**, however small it is painted, which is the
-/// single biggest scroll-jank source in long lists. Callers should pass roughly
-/// **2× the displayed width** (a retina reserve — never more).
-///
-/// [filterQuality] defaults to [FilterQuality.low]: for the small thumbnails
-/// this widget is used for, the cheap resample is indistinguishable on screen
-/// but markedly cheaper to raster than `medium`/`high`.
 class CoverImage extends StatelessWidget {
   const CoverImage({
     super.key,
     required this.url,
     required this.placeholderBuilder,
     this.fit = BoxFit.cover,
-    this.cacheWidth,
-    this.filterQuality = FilterQuality.low,
   });
 
   final String? url;
@@ -211,12 +198,6 @@ class CoverImage extends StatelessWidget {
 
   final BoxFit fit;
 
-  /// Bounded decode width in physical pixels; `null` keeps the file resolution.
-  final int? cacheWidth;
-
-  /// Resample quality — cheap by default (see the class docs).
-  final FilterQuality filterQuality;
-
   @override
   Widget build(BuildContext context) {
     final value = url;
@@ -224,8 +205,6 @@ class CoverImage extends StatelessWidget {
     return Image.network(
       value,
       fit: fit,
-      cacheWidth: cacheWidth,
-      filterQuality: filterQuality,
       errorBuilder: (context, _, _) => placeholderBuilder(context),
     );
   }
@@ -244,7 +223,6 @@ class PosterThumbnail extends StatelessWidget {
     this.height = 64,
     this.iconSize = 24,
     this.borderRadius = 8,
-    this.cacheWidth,
   });
 
   final String? url;
@@ -254,17 +232,9 @@ class PosterThumbnail extends StatelessWidget {
   final double iconSize;
   final double borderRadius;
 
-  /// Optional bounded decode width (physical px). When omitted it is derived
-  /// from [width] with a fixed 2× retina reserve, so **every** poster decode is
-  /// bounded by default — no call site can accidentally fall back to decoding
-  /// the full file. Pass an explicit value only to deviate (e.g. a poster that
-  /// is drawn much larger than [width]).
-  final int? cacheWidth;
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final decodeWidth = cacheWidth ?? (width * 2).round();
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
@@ -273,7 +243,6 @@ class PosterThumbnail extends StatelessWidget {
         height: height,
         child: CoverImage(
           url: url,
-          cacheWidth: decodeWidth,
           placeholderBuilder: (_) => _placeholder(cs),
         ),
       ),

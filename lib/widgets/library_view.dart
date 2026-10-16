@@ -360,10 +360,8 @@ class _LibraryListViewState extends State<LibraryListView> {
           itemCount: visible.length,
           separatorBuilder: (_, _) =>
               Divider(height: 1, indent: 16 + posterWidth + 14),
-          itemBuilder: (context, index) => RepaintBoundary(
-            // A row repaints in isolation instead of dirtying the whole list.
-            child: _MediaTile(item: visible[index], posterWidth: posterWidth),
-          ),
+          itemBuilder: (context, index) =>
+              _MediaTile(item: visible[index], posterWidth: posterWidth),
         );
       },
     );
@@ -406,8 +404,6 @@ class _MediaTile extends StatelessWidget {
               height: posterHeight,
               iconSize: posterWidth * 0.35,
               borderRadius: 10,
-              // ~2× the painted width — a retina reserve, no more.
-              cacheWidth: (posterWidth * 2).round(),
             ),
             const SizedBox(width: 14),
             Expanded(
