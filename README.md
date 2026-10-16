@@ -43,7 +43,7 @@ Series status and progress are **derived** from the checked episodes (e.g. 10/19
 
 **Language** — German / English toggle (German is the default). Switching updates the UI, TMDB metadata and search language, and re-fetches stored metadata — including episode titles and descriptions.
 
-**Per-user data** — magic-link (email) sign-in; every row is scoped to its owner through Postgres Row Level Security, so nothing is readable or writable without an authenticated session. Multiple people can use the same deployment, each with a completely separate library.
+**Per-user data** — email sign-in (a **magic link** *or* the **one-time code** from the same email); every row is scoped to its owner through Postgres Row Level Security, so nothing is readable or writable without an authenticated session. Multiple people can use the same deployment, each with a completely separate library. The code path exists because **iOS isolates storage between Safari and a homescreen-PWA**, so a link opened in another context never lands in the PWA the app is used in — the code is typed straight into the app instead.
 
 ---
 
@@ -52,7 +52,7 @@ Series status and progress are **derived** from the checked episodes (e.g. 10/19
 | Layer | Choice |
 |---|---|
 | App | Flutter (Dart 3), Material 3, `provider` for state, `fl_chart` for charts |
-| Backend | Supabase — Postgres, Auth (magic link), Row Level Security |
+| Backend | Supabase — Postgres, Auth (magic link + email code), Row Level Security |
 | Metadata | TMDB (movies/series), OpenLibrary (books) |
 | Hosting | GitHub Pages, deployed by GitHub Actions on every push |
 

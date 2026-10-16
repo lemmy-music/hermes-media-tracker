@@ -24,11 +24,19 @@ class _FakeAuth extends AuthProvider {
   /// Returned by [sendMagicLink] instead of succeeding.
   String? nextError;
 
+  /// Returned by [verifyEmailCode] instead of signing in.
+  String? nextVerifyError;
+
   int sendCount = 0;
   int signOutCount = 0;
+  int verifyCount = 0;
 
   /// Email of the most recent [sendMagicLink] call.
   String? lastRequestedEmail;
+
+  /// Arguments of the most recent [verifyEmailCode] call.
+  String? lastVerifyEmail;
+  String? lastVerifyCode;
 
   @override
   AuthStatus get status => _status;
@@ -41,9 +49,27 @@ class _FakeAuth extends AuthProvider {
     sendCount++;
     final error = nextError;
     if (error != null) return error;
-    // Requesting a link does NOT sign the user in — they still have to click
-    // the link in their inbox, which the SDK reports via onAuthStateChange.
+    // Requesting a link/code does NOT sign the user in — they still have to
+    // click the link or enter the code, which the SDK reports via
+    // onAuthStateChange.
     lastRequestedEmail = email;
+    return null;
+  }
+
+  @override
+  Future<String?> verifyEmailCode({
+    required String email,
+    required String code,
+  }) async {
+    verifyCount++;
+    lastVerifyEmail = email;
+    lastVerifyCode = code;
+    final error = nextVerifyError;
+    if (error != null) return error;
+    // A correct code establishes the session in this very context.
+    _status = AuthStatus.signedIn;
+    _email = email;
+    notifyListeners();
     return null;
   }
 
@@ -338,5 +364,129 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Sign out'), findsOneWidget);
+  });
+
+  group('login: email code (OTP)', () {
+    Future<void> sendEmail(WidgetTester tester, {String? label}) async {
+      await tester.enterText(find.byType(TextFormField), 'daniel@example.com');
+      await tester.tap(find.text(label ?? 'Send magic link'));
+      await tester.pump();
+      await tester.pump();
+    }
+
+    testWidgets('after sending, the code field appears focused', (
+      WidgetTester tester,
+    ) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+
+      expect(find.text('Check your inbox'), findsOneWidget);
+      expect(find.text('Sign-in code'), findsOneWidget);
+
+      final field = tester.widget<TextField>(
+        find.byKey(const Key('login-code-field')),
+      );
+      expect(field.autofocus, isTrue);
+      expect(field.keyboardType, TextInputType.number);
+      // The resend action starts in its cooldown against accidental spam.
+      expect(find.text('Resend in 30s'), findsOneWidget);
+    });
+
+    testWidgets('too-short input keeps "Sign in" disabled', (
+      WidgetTester tester,
+    ) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+
+      final signIn = find.byKey(const Key('login-sign-in'));
+      expect(tester.widget<FilledButton>(signIn).onPressed, isNull);
+
+      await tester.enterText(find.byKey(const Key('login-code-field')), '123');
+      await tester.pump();
+      expect(tester.widget<FilledButton>(signIn).onPressed, isNull);
+      expect(auth.verifyCount, 0);
+    });
+
+    testWidgets('a correct code signs the user in', (
+      WidgetTester tester,
+    ) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('login-code-field')),
+        '123456',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(auth.verifyCount, 1);
+      expect(auth.lastVerifyEmail, 'daniel@example.com');
+      expect(auth.lastVerifyCode, '123456');
+      // The AuthGate swapped to the app — the session exists in this context.
+      expect(find.text('Your library is empty'), findsOneWidget);
+    });
+
+    testWidgets('a wrong code shows an inline error', (
+      WidgetTester tester,
+    ) async {
+      const message =
+          'That code is not correct. Please check the digits from the email.';
+      final auth = _FakeAuth(status: AuthStatus.signedOut)
+        ..nextVerifyError = message;
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('login-code-field')),
+        '000000',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(message), findsOneWidget);
+      // Still on the confirmation view — no sign-in.
+      expect(find.text('Check your inbox'), findsOneWidget);
+      expect(find.text('Your library is empty'), findsNothing);
+    });
+
+    testWidgets('resend re-sends the email once the cooldown elapsed', (
+      WidgetTester tester,
+    ) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+      expect(auth.sendCount, 1);
+
+      // Cooldown is active right after sending.
+      expect(find.text('Resend in 30s'), findsOneWidget);
+
+      // Let it elapse, then resend.
+      await tester.pump(const Duration(seconds: 31));
+      expect(find.text('Resend email'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('login-resend')));
+      await tester.pump();
+      await tester.pump();
+      expect(auth.sendCount, 2);
+    });
+
+    testWidgets('shows the German code-step copy', (WidgetTester tester) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth, settings: SettingsProvider());
+      await sendEmail(tester, label: 'Anmelde-Link senden');
+
+      expect(find.text('Anmelde-Code'), findsOneWidget);
+      expect(find.text('Anmelden'), findsOneWidget);
+      expect(find.text('Erneut senden in 30s'), findsOneWidget);
+      expect(find.text('Sign in'), findsNothing);
+    });
   });
 }

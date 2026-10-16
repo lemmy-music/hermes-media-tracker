@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
+import '../l10n/app_language.dart';
+import '../l10n/app_strings.dart';
 
 /// High-level auth state for the UI.
 enum AuthStatus {
@@ -27,16 +29,34 @@ abstract class AuthProvider extends ChangeNotifier {
   /// the [AuthStatus] may stay [AuthStatus.unknown].
   Future<void> init() async {}
 
-  /// Sends a magic link to [email].
+  /// Sends a sign-in email to [email].
   ///
-  /// Returns `null` on success, otherwise a user-facing error message.
+  /// The same email carries **both** a magic link and a one-time code (see
+  /// [verifyEmailCode] and PROJECT.md for why). Returns `null` on success,
+  /// otherwise a user-facing, localized error message.
   Future<String?> sendMagicLink(String email);
+
+  /// Verifies the numeric one-time code from the sign-in email for [email].
+  ///
+  /// Typing the code here creates the session **in the current browser / PWA
+  /// context** — unlike tapping the link, which on iOS can open in another
+  /// context (Safari or the mail app's in-app browser) that has its own,
+  /// separate storage from a homescreen-PWA. Supabase sends the code in the
+  /// same email as the link; both keep working.
+  ///
+  /// `code` may be 6–8 digits. Returns `null` on success (the SDK then reports
+  /// the new session through `onAuthStateChange`), otherwise a user-facing,
+  /// localized error message.
+  Future<String?> verifyEmailCode({
+    required String email,
+    required String code,
+  });
 
   /// Signs the current user out.
   Future<void> signOut();
 }
 
-/// [AuthProvider] backed by Supabase GoTrue (email magic-link flow).
+/// [AuthProvider] backed by Supabase GoTrue (email magic-link + OTP flow).
 ///
 /// State is derived from two sources:
 ///  * [SupabaseClient.auth].`currentSession` at construction/`init()` — the SDK
@@ -44,8 +64,11 @@ abstract class AuthProvider extends ChangeNotifier {
 ///  * `onAuthStateChange` — keeps the UI in sync for sign-in, sign-out, token
 ///    refresh and the web redirect after a magic-link click.
 class SupabaseAuthProvider extends AuthProvider {
-  SupabaseAuthProvider({SupabaseClient? client})
-      : _client = client ?? Supabase.instance.client {
+  SupabaseAuthProvider({
+    SupabaseClient? client,
+    AppLanguage Function()? language,
+  }) : _client = client ?? Supabase.instance.client,
+       _language = language ?? _english {
     _subscription = _client.auth.onAuthStateChange.listen(
       (state) => _apply(state.session),
       onError: (Object _) {
@@ -56,11 +79,21 @@ class SupabaseAuthProvider extends AuthProvider {
     _apply(_client.auth.currentSession);
   }
 
+  static AppLanguage _english() => AppLanguage.en;
+
   final SupabaseClient _client;
+
+  /// Supplies the UI language for localized error messages — injected by
+  /// `main.dart` from the [SettingsProvider], English by default. Kept as a
+  /// callback so the provider stays independent of the settings layer.
+  final AppLanguage Function() _language;
+
   StreamSubscription<AuthState>? _subscription;
 
   AuthStatus _status = AuthStatus.unknown;
   String? _email;
+
+  AppStrings get _strings => AppStrings(_language());
 
   @override
   AuthStatus get status => _status;
@@ -83,9 +116,34 @@ class SupabaseAuthProvider extends AuthProvider {
       );
       return null;
     } on AuthException catch (error) {
-      return describeAuthError(error);
+      return describeAuthError(error, strings: _strings);
     } catch (_) {
-      return 'Could not reach the server. Check your connection and try again.';
+      return _strings.authNetworkError;
+    }
+  }
+
+  @override
+  Future<String?> verifyEmailCode({
+    required String email,
+    required String code,
+  }) async {
+    try {
+      // Supabase's GoTrue serializes the OTP type to snake_case in the request
+      // body: `OtpType.email` → `type=email`. That is the current name of the
+      // email magic-link/OTP verification type ("magiclink" is the deprecated
+      // alias the server still maps onto it), so `OtpType.email` is the
+      // correct, forward-compatible choice for verifying a code from a
+      // magic-link mail.
+      await _client.auth.verifyOTP(
+        email: email,
+        token: code,
+        type: OtpType.email,
+      );
+      return null;
+    } on AuthException catch (error) {
+      return describeAuthError(error, strings: _strings);
+    } catch (_) {
+      return _strings.authNetworkError;
     }
   }
 
@@ -107,8 +165,9 @@ class SupabaseAuthProvider extends AuthProvider {
   }
 
   void _apply(Session? session) {
-    final nextStatus =
-        session == null ? AuthStatus.signedOut : AuthStatus.signedIn;
+    final nextStatus = session == null
+        ? AuthStatus.signedOut
+        : AuthStatus.signedIn;
     final nextEmail = session?.user.email;
     if (nextStatus == _status && nextEmail == _email) return;
     _status = nextStatus;
@@ -117,33 +176,65 @@ class SupabaseAuthProvider extends AuthProvider {
   }
 }
 
-/// Maps a GoTrue [AuthException] to a friendly, English message.
-String describeAuthError(AuthException error) {
+/// Maps a GoTrue [AuthException] to a friendly, user-facing message.
+///
+/// The message is localized with [strings] (English by default) so the login
+/// screen can show it in the active language. Kept in one place so the
+/// magic-link send and the email-code verify share the exact same wording and
+/// never drift apart.
+String describeAuthError(
+  AuthException error, {
+  AppStrings strings = const AppStrings(AppLanguage.en),
+}) {
+  // A failed fetch (offline, DNS, CORS, or a 5xx) surfaces as a retryable
+  // fetch exception without a response body — report it as a connection issue.
+  if (error is AuthRetryableFetchException) {
+    return strings.authNetworkError;
+  }
+
   final message = error.message.toLowerCase();
   final statusCode = error.statusCode;
 
-  final isRateLimited = statusCode == '429' ||
+  final isRateLimited =
+      statusCode == '429' ||
       message.contains('rate limit') ||
       message.contains('too many') ||
       error.code == 'over_email_send_rate_limit';
   if (isRateLimited) {
-    return 'Too many requests. Please wait a few minutes before requesting '
-        'another link.';
+    return strings.authRateLimited;
   }
 
-  final isBadEmail = error.code == 'validation_failed' ||
+  // An expired one-time code (or an expired request). GoTrue reports this as
+  // `otp_expired` ("Token has expired or is invalid").
+  final isExpired = error.code == 'otp_expired' || message.contains('expired');
+  if (isExpired) {
+    return strings.authCodeExpired;
+  }
+
+  // A wrong one-time code. GoTrue reports `otp_invalid` ("Invalid token") — the
+  // wording differs between versions, so also match on the message.
+  final looksWrongCode =
+      message.contains('invalid') || message.contains('incorrect');
+  final mentionsCode =
+      message.contains('token') ||
+      message.contains('otp') ||
+      message.contains('code');
+  if (error.code == 'otp_invalid' || (looksWrongCode && mentionsCode)) {
+    return strings.authCodeInvalid;
+  }
+
+  final isBadEmail =
+      error.code == 'validation_failed' ||
       (message.contains('invalid') && message.contains('email')) ||
       message.contains('unable to validate email');
   if (isBadEmail) {
-    return 'That does not look like a valid email address.';
+    return strings.emailInvalid;
   }
 
   if (message.contains('signups not allowed') ||
       message.contains('signup is disabled')) {
-    return 'New sign-ups are currently disabled.';
+    return strings.authSignupsDisabled;
   }
 
-  return error.message.isNotEmpty
-      ? error.message
-      : 'Sign-in failed. Please try again.';
+  return error.message.isNotEmpty ? error.message : strings.authGenericError;
 }

@@ -27,7 +27,11 @@ Future<void> main() async {
     publishableKey: AppConfig.supabaseAnonKey,
   );
 
-  final authProvider = SupabaseAuthProvider();
+  // Localized auth error messages follow the settings language — read lazily
+  // so a later language switch is picked up.
+  final authProvider = SupabaseAuthProvider(
+    language: () => settingsProvider.language,
+  );
   // Restore the persisted session in the background; the AuthGate shows a
   // loading indicator until that resolves.
   unawaited(authProvider.init());

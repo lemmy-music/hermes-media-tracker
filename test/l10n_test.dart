@@ -479,4 +479,37 @@ void main() {
       expect(en.libraryListTitle(LibraryKindFilter.series), 'Series');
     });
   });
+
+  group('login code (OTP) strings', () {
+    const de = AppStrings(AppLanguage.de);
+    const en = AppStrings(AppLanguage.en);
+
+    test('every new string exists in both languages', () {
+      final pairs = <(String, String)>[
+        (de.codeLabel, en.codeLabel),
+        (de.codeHint, en.codeHint),
+        (de.signIn, en.signIn),
+        (de.checkingCode, en.checkingCode),
+        (de.resendEmail, en.resendEmail),
+        (de.resendInSeconds(30), en.resendInSeconds(30)),
+        (de.linkOrCodeHint, en.linkOrCodeHint),
+        (de.authCodeInvalid, en.authCodeInvalid),
+        (de.authCodeExpired, en.authCodeExpired),
+        (de.authRateLimited, en.authRateLimited),
+        (de.authSignupsDisabled, en.authSignupsDisabled),
+        (de.authNetworkError, en.authNetworkError),
+        (de.authGenericError, en.authGenericError),
+      ];
+      for (final (german, english) in pairs) {
+        expect(german.trim(), isNotEmpty);
+        expect(english.trim(), isNotEmpty);
+        expect(german, isNot(english));
+      }
+    });
+
+    test('the resend countdown injects the seconds', () {
+      expect(de.resendInSeconds(30), contains('30'));
+      expect(en.resendInSeconds(30), contains('30'));
+    });
+  });
 }

@@ -117,6 +117,12 @@ class _FakeAuth extends AuthProvider {
   Future<String?> sendMagicLink(String email) async => null;
 
   @override
+  Future<String?> verifyEmailCode({
+    required String email,
+    required String code,
+  }) async => null;
+
+  @override
   Future<void> signOut() async {}
 }
 

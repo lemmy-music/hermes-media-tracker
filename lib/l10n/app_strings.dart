@@ -438,6 +438,51 @@ class AppStrings {
   /// "We sent a sign-in link to the given address…".
   String sentLinkTo(String email) => _tParam('loginSentTo', {'email': email});
 
+  // ── login, step 2: magic link **or** email code ────────────────────────────
+
+  /// Label of the numeric one-time-code input.
+  String get codeLabel => _t('codeLabel');
+
+  /// Hint placed inside the code input.
+  String get codeHint => _t('codeHint');
+
+  /// Primary action of the code step ("Anmelden" / "Sign in").
+  String get signIn => _t('signIn');
+
+  /// Loading label while the code is being verified.
+  String get checkingCode => _t('checkingCode');
+
+  /// Action that re-sends the sign-in email.
+  String get resendEmail => _t('resendEmail');
+
+  /// Label of the disabled resend action during the cooldown.
+  String resendInSeconds(int seconds) =>
+      _tParam('resendIn', {'seconds': '$seconds'});
+
+  /// Hint that *both* the link and the code work — the whole point of the
+  /// feature (iOS keeps Safari and the homescreen-PWA storage apart).
+  String get linkOrCodeHint => _t('linkOrCodeHint');
+
+  // ── auth errors (see `describeAuthError`) ──────────────────────────────────
+
+  /// Wrong one-time code.
+  String get authCodeInvalid => _t('authCodeInvalid');
+
+  /// Expired one-time code / expired request.
+  String get authCodeExpired => _t('authCodeExpired');
+
+  /// Rate limit hit on sending or verifying.
+  String get authRateLimited => _t('authRateLimited');
+
+  /// Sign-ups disabled server-side.
+  String get authSignupsDisabled => _t('authSignupsDisabled');
+
+  /// The server could not be reached (offline / CORS / 5xx).
+  String get authNetworkError => _t('authNetworkError');
+
+  /// Fallback when nothing more specific applies.
+  String get authGenericError => _t('authGenericError');
+
   // ───────────────────────────────────────────────────────────────────────────
   // settings sheet
   // ───────────────────────────────────────────────────────────────────────────
@@ -875,6 +920,26 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
         'Der Link läuft nach kurzer Zeit ab. Nichts im Postfach? Schau auch '
         'im Spam-Ordner nach.',
     'useDifferentEmail': 'Andere E-Mail-Adresse verwenden',
+    // login step 2: link or code
+    'codeLabel': 'Anmelde-Code',
+    'codeHint': '6-stelliger Code aus der E-Mail',
+    'signIn': 'Anmelden',
+    'checkingCode': 'Code wird geprüft…',
+    'resendEmail': 'E-Mail erneut senden',
+    'resendIn': 'Erneut senden in {seconds}s',
+    'linkOrCodeHint':
+        'Öffne den Link in der E-Mail oder tippe den Code hier ein — beides '
+        'funktioniert.',
+    // auth errors
+    'authCodeInvalid':
+        'Der Code stimmt nicht. Bitte prüfe die Ziffern aus der E-Mail.',
+    'authCodeExpired': 'Der Code ist abgelaufen. Bitte fordere einen neuen an.',
+    'authRateLimited': 'Zu viele Anfragen. Bitte warte ein paar Minuten.',
+    'authSignupsDisabled': 'Neue Registrierungen sind derzeit deaktiviert.',
+    'authNetworkError':
+        'Der Server ist nicht erreichbar. Prüfe deine Verbindung und versuch '
+        'es erneut.',
+    'authGenericError': 'Anmeldung fehlgeschlagen. Bitte versuch es erneut.',
     // settings
     'signedIn': 'Angemeldet',
     'signedInWithMagicLink': 'Angemeldet per Anmelde-Link',
@@ -1168,6 +1233,26 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
         'The link expires after a short while. Nothing in your inbox? Check '
         'the spam folder.',
     'useDifferentEmail': 'Use a different email',
+    // login step 2: link or code
+    'codeLabel': 'Sign-in code',
+    'codeHint': '6-digit code from the email',
+    'signIn': 'Sign in',
+    'checkingCode': 'Checking code…',
+    'resendEmail': 'Resend email',
+    'resendIn': 'Resend in {seconds}s',
+    'linkOrCodeHint':
+        'Open the link in the email or type the code here — either works.',
+    // auth errors
+    'authCodeInvalid':
+        'That code is not correct. Please check the digits from the email.',
+    'authCodeExpired': 'The code has expired. Please request a new one.',
+    'authRateLimited':
+        'Too many requests. Please wait a few minutes before requesting '
+        'another link.',
+    'authSignupsDisabled': 'New sign-ups are currently disabled.',
+    'authNetworkError':
+        'Could not reach the server. Check your connection and try again.',
+    'authGenericError': 'Sign-in failed. Please try again.',
     // settings
     'signedIn': 'Signed in',
     'signedInWithMagicLink': 'Signed in with a magic link',
