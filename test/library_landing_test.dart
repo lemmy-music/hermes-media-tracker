@@ -12,6 +12,7 @@ import 'package:media_tracker/providers/settings_provider.dart';
 import 'package:media_tracker/providers/theme_provider.dart';
 import 'package:media_tracker/repositories/media_repository.dart';
 import 'package:media_tracker/screens/library_screen.dart';
+import 'package:media_tracker/widgets/category_banner.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // fakes — no Supabase, no network
@@ -56,14 +57,41 @@ class _FakeRepository extends MediaRepository {
   }
 }
 
-MediaItem _movie(String title) =>
-    MediaItem(id: 'movie-$title', kind: MediaKind.movie, title: title);
+MediaItem _movie(String title, {String? posterUrl, DateTime? createdAt}) =>
+    MediaItem(
+      id: 'movie-$title',
+      kind: MediaKind.movie,
+      title: title,
+      posterUrl: posterUrl,
+      createdAt: createdAt,
+    );
 
-MediaItem _series(String title) =>
-    MediaItem(id: 'series-$title', kind: MediaKind.series, title: title);
+MediaItem _series(String title, {String? posterUrl, DateTime? createdAt}) =>
+    MediaItem(
+      id: 'series-$title',
+      kind: MediaKind.series,
+      title: title,
+      posterUrl: posterUrl,
+      createdAt: createdAt,
+    );
 
-MediaItem _book(String title) =>
-    MediaItem(id: 'book-$title', kind: MediaKind.book, title: title);
+MediaItem _book(String title, {String? posterUrl, DateTime? createdAt}) =>
+    MediaItem(
+      id: 'book-$title',
+      kind: MediaKind.book,
+      title: title,
+      posterUrl: posterUrl,
+      createdAt: createdAt,
+    );
+
+/// Finds an [Image] backed by a [NetworkImage] for [url] — the banner renders
+/// the same cover in several layers, so this matches one or more.
+Finder _imageWithUrl(String url) => find.byWidgetPredicate(
+  (widget) =>
+      widget is Image &&
+      widget.image is NetworkImage &&
+      (widget.image as NetworkImage).url == url,
+);
 
 Future<void> _pump(
   WidgetTester tester, {
@@ -83,7 +111,7 @@ Future<void> _pump(
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues(<String, Object>{}));
 
-  testWidgets('renders four category tiles with the loaded counts', (
+  testWidgets('renders four category banners with the loaded counts', (
     tester,
   ) async {
     await _pump(
@@ -99,6 +127,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.byType(CategoryBanner), findsNWidgets(4));
     expect(find.byKey(LibraryScreen.movieTileKey), findsOneWidget);
     expect(find.byKey(LibraryScreen.seriesTileKey), findsOneWidget);
     expect(find.byKey(LibraryScreen.bookTileKey), findsOneWidget);
@@ -286,5 +315,131 @@ void main() {
     expect(find.text('1 Serie'), findsOneWidget);
     expect(find.text('1 Buch'), findsOneWidget);
     expect(find.text('3 Einträge'), findsOneWidget);
+  });
+
+  // ── banner artwork ─────────────────────────────────────────────────────────
+
+  testWidgets('a banner with a cover renders that cover as artwork', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repository: _FakeRepository(
+        items: [
+          _movie(
+            'Inception',
+            posterUrl: 'https://image.tmdb.org/t/p/w342/incep.jpg',
+            createdAt: DateTime(2026),
+          ),
+          _movie(
+            'Arrival',
+            posterUrl: 'https://image.tmdb.org/t/p/w342/arrival.jpg',
+            createdAt: DateTime(2024),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The newest cover is the hero (background + deck front)…
+    expect(
+      _imageWithUrl('https://image.tmdb.org/t/p/w342/incep.jpg'),
+      findsWidgets,
+    );
+    // …the older one fans behind it.
+    expect(
+      _imageWithUrl('https://image.tmdb.org/t/p/w342/arrival.jpg'),
+      findsWidgets,
+    );
+  });
+
+  testWidgets('a category without a cover shows the gradient fallback', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repository: _FakeRepository(
+        items: [
+          _movie(
+            'Inception',
+            posterUrl: 'https://image.tmdb.org/t/p/w342/incep.jpg',
+            createdAt: DateTime(2026),
+          ),
+          // Typical OpenLibrary book: no cover at all.
+          _book('Dune', createdAt: DateTime(2025)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The book banner exists, is intact, and renders no image at all…
+    final bookBanner = find.byKey(LibraryScreen.bookTileKey);
+    expect(bookBanner, findsOneWidget);
+    expect(
+      find.descendant(of: bookBanner, matching: find.byType(Image)),
+      findsNothing,
+    );
+    // …but still shows its icon + label + count (a deliberate fallback).
+    expect(
+      find.descendant(of: bookBanner, matching: find.byType(Icon)),
+      findsWidgets,
+    );
+    expect(find.text('1 book'), findsOneWidget);
+
+    // The movie banner, in contrast, does render its cover.
+    expect(
+      _imageWithUrl('https://image.tmdb.org/t/p/w342/incep.jpg'),
+      findsWidgets,
+    );
+  });
+
+  testWidgets('a broken cover URL degrades to the fallback without crashing', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repository: _FakeRepository(
+        items: [
+          _movie(
+            'Inception',
+            posterUrl: 'https://image.invalid/nope.jpg',
+            createdAt: DateTime(2026),
+          ),
+        ],
+      ),
+    );
+    // The test HTTP stack answers every request with an error; the shared
+    // CoverImage placeholder must swallow it (no exception, no crash).
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(LibraryScreen.movieTileKey), findsOneWidget);
+    expect(find.text('1 movie'), findsOneWidget);
+  });
+
+  testWidgets('tapping a banner opens the list filtered to its category', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repository: _FakeRepository(
+        items: [
+          _movie(
+            'Inception',
+            posterUrl: 'https://image.tmdb.org/t/p/w342/incep.jpg',
+            createdAt: DateTime(2026),
+          ),
+          _book('Dune', createdAt: DateTime(2025)),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(LibraryScreen.bookTileKey));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(AppBar, 'Books'), findsOneWidget);
+    expect(find.text('Dune'), findsOneWidget);
+    expect(find.text('Inception'), findsNothing);
   });
 }

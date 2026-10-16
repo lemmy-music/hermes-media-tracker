@@ -176,10 +176,44 @@ class StatusBadge extends StatelessWidget {
   };
 }
 
+/// A network cover image that never throws on a missing / broken URL.
+///
+/// The **single source of truth** for cover loading in the app: a `null` /
+/// empty [url] *and* any image error (bad URL, 404, offline) both hand over to
+/// [placeholderBuilder] instead of throwing. [PosterThumbnail] and the category
+/// banners (`CategoryBanner`) both build on this, so cover handling can never
+/// drift between the two.
+class CoverImage extends StatelessWidget {
+  const CoverImage({
+    super.key,
+    required this.url,
+    required this.placeholderBuilder,
+    this.fit = BoxFit.cover,
+  });
+
+  final String? url;
+
+  /// Rendered when [url] is missing / empty **or** the image fails to load.
+  final WidgetBuilder placeholderBuilder;
+
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = url;
+    if (value == null || value.isEmpty) return placeholderBuilder(context);
+    return Image.network(
+      value,
+      fit: fit,
+      errorBuilder: (context, _, _) => placeholderBuilder(context),
+    );
+  }
+}
+
 /// A network poster with a kind-specific placeholder.
 ///
 /// Never throws on a missing / broken image: [url] `null` or an image error
-/// both render [placeholderIcon] on a muted surface.
+/// both render [placeholderIcon] on a muted surface (via [CoverImage]).
 class PosterThumbnail extends StatelessWidget {
   const PosterThumbnail({
     super.key,
@@ -201,20 +235,16 @@ class PosterThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final hasUrl = url != null && url!.isNotEmpty;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: SizedBox(
         width: width,
         height: height,
-        child: hasUrl
-            ? Image.network(
-                url!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => _placeholder(cs),
-              )
-            : _placeholder(cs),
+        child: CoverImage(
+          url: url,
+          placeholderBuilder: (_) => _placeholder(cs),
+        ),
       ),
     );
   }

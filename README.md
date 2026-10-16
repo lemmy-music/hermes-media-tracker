@@ -30,7 +30,7 @@ Series status and progress are **derived** from the checked episodes (e.g. 10/19
 
 **Timestamps** — start and completion dates are tracked automatically and can be edited or back-dated manually.
 
-**Browse by category** — the library tab opens on four fixed category tiles (**Movies / Series / Books / All**) with the entry count of each, so a large library does not bury the list on open. Tapping a tile opens the list filtered to that category (the filter chip shows the preselection and stays changeable).
+**Browse by category** — the library tab opens on four fixed category banners (**Movies / Series / Books / All**) with the entry count of each, so a large library does not bury the list on open. Each banner is a tall card (~1 column on phones, 2 from 600 px) whose background is that category's newest cover — with one or two older covers fanned behind it and a dark→transparent scrim keeping the white label/count readable; a category without any cover falls back to a calm theme gradient, never an empty card. Tapping a banner opens the list filtered to that category (the filter chip shows the preselection and stays changeable).
 
 **Find things again** — the library is searchable (title, plus authors for books; diacritic-tolerant, so "herr" finds "Der Herr der Ringe") and filterable by media type and status, with sorting by recently added, title, release year or progress.
 
@@ -82,7 +82,7 @@ lib/
 ├── screens/       library, search, media detail, login, stats
 ├── services/      TMDB + OpenLibrary clients, ISBN parsing, library filter,
 │                  stats calculator, export/import, download helper
-└── widgets/       shared UI (library list view + category tiles, settings sheet,
+└── widgets/       shared UI (library list view + category banners, settings sheet,
                    media tiles, detail sheets, auth gate)
 ```
 
@@ -150,6 +150,7 @@ Pushing to `main` triggers [`.github/workflows/build-web.yml`](.github/workflows
 | 9 | Category tiles landing screen for the library | ✅ |
 | 10 | Season pre-selection when opening a series | ✅ |
 | 11 | Instant library adoption of new items + open-from-search | ✅ |
+| 12 | Premium category banners with cover artwork | ✅ |
 
 Detailed vision, decisions and known limitations: [`PROJECT.md`](PROJECT.md).
 

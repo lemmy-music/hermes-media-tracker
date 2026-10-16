@@ -255,3 +255,69 @@ List<MediaItem> applyLibraryView({
     sort,
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// category banner artwork
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The cover artwork a category banner (`CategoryBanner`) renders.
+///
+/// [heroUrl] is the newest cover of the category — the full-size image in
+/// front. [layerUrls] are the covers of the (older) entries *fanned behind* it
+/// (offset / tilted / dimmed), already padded to the requested number of
+/// layers. Artwork without any cover ([hasCover] `false`) carries no layers
+/// either — the banner then falls back to a calm theme gradient.
+class CategoryArtwork {
+  const CategoryArtwork({this.heroUrl, this.layerUrls = const <String>[]});
+
+  /// The newest cover of the category, or `null` when there is none.
+  final String? heroUrl;
+
+  /// One URL per decorative fan layer, front-to-back order.
+  final List<String> layerUrls;
+
+  /// Whether any cover is available at all.
+  bool get hasCover => heroUrl != null && heroUrl!.isNotEmpty;
+
+  /// No cover anywhere in the category — the banner uses its gradient fallback.
+  static const CategoryArtwork none = CategoryArtwork();
+}
+
+/// Picks the banner artwork for [filter] out of the already-loaded [items].
+///
+/// * Only entries **with** a cover (`MediaItem.hasPoster`) are candidates, so a
+///   category whose newest entry has no artwork simply falls through to the
+///   next one; a category with no cover at all yields [CategoryArtwork.none].
+/// * The **hero** is the cover of the newest candidate (`createdAt` descending,
+///   missing dates sort last, ties keep their list order). For
+///   [LibraryKindFilter.all] that is the newest entry overall.
+/// * Up to [fanLayers] older covers follow behind the hero. When the category
+///   has fewer covers than that (down to a single one) the newest cover is
+///   reused, so the fan never renders empty slots.
+CategoryArtwork selectCategoryArtwork(
+  List<MediaItem> items, {
+  required LibraryKindFilter filter,
+  int fanLayers = 2,
+}) {
+  final covers = <MediaItem>[
+    for (final item in items)
+      if (filter.allows(item) && item.hasPoster) item,
+  ];
+  if (covers.isEmpty) return CategoryArtwork.none;
+
+  // Newest first, stable on equal / missing dates (original order kept).
+  final order = List<int>.generate(covers.length, (index) => index);
+  order.sort((a, b) {
+    final result = _compareDateDesc(covers[a].createdAt, covers[b].createdAt);
+    return result != 0 ? result : a.compareTo(b);
+  });
+  final urls = <String>[for (final index in order) covers[index].posterUrl!];
+
+  return CategoryArtwork(
+    heroUrl: urls.first,
+    layerUrls: <String>[
+      for (var i = 0; i < fanLayers; i++)
+        urls[i + 1 < urls.length ? i + 1 : urls.length - 1],
+    ],
+  );
+}

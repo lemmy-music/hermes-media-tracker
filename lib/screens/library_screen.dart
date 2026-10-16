@@ -6,36 +6,39 @@ import '../models/media_item.dart';
 import '../providers/library_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/library_filter.dart';
+import '../widgets/category_banner.dart';
 import '../widgets/library_view.dart';
 import '../widgets/media_widgets.dart';
 import '../widgets/metadata_refresh_banner.dart';
 import '../widgets/settings_button.dart';
 
-/// Landing screen of the library tab — the category tiles in front of the list.
+/// Landing screen of the library tab — the category banners in front of the list.
 ///
 /// A library with hundreds of tracked titles buried the list; opening the tab
-/// now shows four fixed category tiles (Movies / Series / Books / All) with
-/// their counts. Tapping one pushes [LibraryListView] with the matching
-/// media-type filter preselected, which reuses the whole search / filter / sort
-/// machinery — no second implementation.
+/// now shows four fixed **category banners** (Movies / Series / Books / All)
+/// with their counts. Each banner is a tall (~156 px) card whose background is
+/// the category's newest cover with a fanned deck of older covers (`CategoryBanner`).
+/// Tapping one pushes [LibraryListView] with the matching media-type filter
+/// preselected, which reuses the whole search / filter / sort machinery — no
+/// second implementation.
 ///
 /// The AppBar keeps the library actions: refresh, the overflow menu with the
 /// metadata refresh and the settings gear. Loading / error / empty states are
 /// unchanged: an empty library shows the friendly empty state instead of four
-/// tiles with `0`.
+/// banners with `0`.
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
 
   /// Actions offered by the overflow menu in the AppBar.
   static const String refreshMetadataAction = 'refresh-metadata';
 
-  // Tile keys for the four categories (used by widget tests).
+  // Banner keys for the four categories (used by widget tests).
   static const Key movieTileKey = Key('library-tile-movies');
   static const Key seriesTileKey = Key('library-tile-series');
   static const Key bookTileKey = Key('library-tile-books');
   static const Key allTileKey = Key('library-tile-all');
 
-  /// The tile key for [filter].
+  /// The banner key for [filter].
   static Key tileKeyFor(LibraryKindFilter filter) => switch (filter) {
     LibraryKindFilter.movies => movieTileKey,
     LibraryKindFilter.series => seriesTileKey,
@@ -43,7 +46,7 @@ class LibraryScreen extends StatelessWidget {
     LibraryKindFilter.all => allTileKey,
   };
 
-  /// The categories shown as tiles, in display order.
+  /// The categories shown as banners, in display order.
   static const List<LibraryKindFilter> tiles = <LibraryKindFilter>[
     LibraryKindFilter.movies,
     LibraryKindFilter.series,
@@ -141,7 +144,7 @@ class LibraryScreen extends StatelessWidget {
     return _buildTiles(context, items);
   }
 
-  /// The responsive grid of category tiles, backed by the loaded list.
+  /// The responsive grid of category banners, backed by the loaded list.
   Widget _buildTiles(BuildContext context, List<MediaItem> items) {
     final theme = Theme.of(context);
     final strings = context.strings;
@@ -155,11 +158,8 @@ class LibraryScreen extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 900
-            ? 4
-            : constraints.maxWidth >= 600
-            ? 3
-            : 2;
+        // The banners need width, so at most two columns — one on phones.
+        final columns = constraints.maxWidth >= 600 ? 2 : 1;
         return CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -181,11 +181,13 @@ class LibraryScreen extends StatelessWidget {
                   crossAxisCount: columns,
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 1.35,
+                  // A fixed banner height instead of an aspect ratio, so the
+                  // cards stay tall whatever the column width.
+                  mainAxisExtent: CategoryBanner.height,
                 ),
                 delegate: SliverChildBuilderDelegate((context, index) {
                   final filter = LibraryScreen.tiles[index];
-                  return _CategoryTile(
+                  return CategoryBanner(
                     key: LibraryScreen.tileKeyFor(filter),
                     icon: filter.kind == null
                         ? Icons.video_library_outlined
@@ -195,6 +197,7 @@ class LibraryScreen extends StatelessWidget {
                       filter,
                       counts[filter] ?? 0,
                     ),
+                    artwork: selectCategoryArtwork(items, filter: filter),
                     onTap: () => _openList(context, filter),
                   );
                 }, childCount: LibraryScreen.tiles.length),
@@ -233,65 +236,5 @@ class LibraryScreen extends StatelessWidget {
         SnackBar(content: Text(strings.metadataRefreshEmpty)),
       );
     }
-  }
-}
-
-/// One category tile: an icon, the plural category name and the count.
-class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.countLabel,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final String countLabel;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Icon(icon, size: 32, color: cs.primary),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    countLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: cs.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
