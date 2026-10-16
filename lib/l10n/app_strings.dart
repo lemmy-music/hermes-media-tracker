@@ -446,6 +446,11 @@ class AppStrings {
   /// Hint placed inside the code input.
   String get codeHint => _t('codeHint');
 
+  /// Secondary hint under the field: on iPhone, **copy** the link instead of
+  /// tapping it, because iOS opens a tapped link in another browser context
+  /// whose storage the homescreen-PWA cannot see.
+  String get pasteLinkHint => _t('pasteLinkHint');
+
   /// Primary action of the code step ("Anmelden" / "Sign in").
   String get signIn => _t('signIn');
 
@@ -470,6 +475,15 @@ class AppStrings {
 
   /// Expired one-time code / expired request.
   String get authCodeExpired => _t('authCodeExpired');
+
+  /// Pasted magic-link token that is invalid (malformed / not recognised).
+  String get authLinkInvalid => _t('authLinkInvalid');
+
+  /// Pasted magic-link token that has expired **or was already used**.
+  String get authLinkExpired => _t('authLinkExpired');
+
+  /// The step-2 field held neither a code nor a usable link/token.
+  String get authInputInvalid => _t('authInputInvalid');
 
   /// Rate limit hit on sending or verifying.
   String get authRateLimited => _t('authRateLimited');
@@ -922,18 +936,32 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'useDifferentEmail': 'Andere E-Mail-Adresse verwenden',
     // login step 2: link or code
     'codeLabel': 'Anmelde-Code',
-    'codeHint': '6-stelliger Code aus der E-Mail',
+    'codeHint': 'Code oder Link hier einfügen',
     'signIn': 'Anmelden',
-    'checkingCode': 'Code wird geprüft…',
+    'checkingCode': 'Wird geprüft…',
     'resendEmail': 'E-Mail erneut senden',
     'resendIn': 'Erneut senden in {seconds}s',
     'linkOrCodeHint':
-        'Öffne den Link in der E-Mail oder tippe den Code hier ein — beides '
-        'funktioniert.',
+        'Tippe den Link in der E-Mail an — oder füge ihn unten in das Feld '
+        'ein. Beides meldet dich an.',
+    'pasteLinkHint':
+        'iPhone: Tippe den Link in der Mail nicht an, sondern halte ihn '
+        'gedrückt und wähle „Kopieren“. Füge ihn dann hier ein — sonst öffnet '
+        'iOS die Anmeldung in Safari, und sie kommt in der App (Homescreen-'
+        'Symbol) nicht an.',
     // auth errors
     'authCodeInvalid':
         'Der Code stimmt nicht. Bitte prüfe die Ziffern aus der E-Mail.',
     'authCodeExpired': 'Der Code ist abgelaufen. Bitte fordere einen neuen an.',
+    'authLinkInvalid':
+        'Dieser Anmelde-Link ist ungültig. Füge den vollständigen Link aus der '
+        'E-Mail ein.',
+    'authLinkExpired':
+        'Der Anmelde-Link ist abgelaufen oder wurde bereits verwendet. Bitte '
+        'fordere eine neue E-Mail an.',
+    'authInputInvalid':
+        'Bitte gib den Anmelde-Code aus der E-Mail oder den kopierten '
+        'Anmelde-Link ein.',
     'authRateLimited': 'Zu viele Anfragen. Bitte warte ein paar Minuten.',
     'authSignupsDisabled': 'Neue Registrierungen sind derzeit deaktiviert.',
     'authNetworkError':
@@ -1235,17 +1263,32 @@ const Map<AppLanguage, Map<String, String>> _kStrings = {
     'useDifferentEmail': 'Use a different email',
     // login step 2: link or code
     'codeLabel': 'Sign-in code',
-    'codeHint': '6-digit code from the email',
+    'codeHint': 'Paste the code or the link here',
     'signIn': 'Sign in',
-    'checkingCode': 'Checking code…',
+    'checkingCode': 'Checking…',
     'resendEmail': 'Resend email',
     'resendIn': 'Resend in {seconds}s',
     'linkOrCodeHint':
-        'Open the link in the email or type the code here — either works.',
+        'Tap the link in the email — or paste it into the field below. '
+        'Either one signs you in.',
+    'pasteLinkHint':
+        'iPhone: don\'t tap the link in the email — long-press it and choose '
+        '"Copy", then paste it here. Otherwise iOS opens the sign-in in '
+        'Safari, where it never reaches the app when it is on your home '
+        'screen.',
     // auth errors
     'authCodeInvalid':
         'That code is not correct. Please check the digits from the email.',
     'authCodeExpired': 'The code has expired. Please request a new one.',
+    'authLinkInvalid':
+        'That sign-in link is not valid. Paste the complete link from the '
+        'email.',
+    'authLinkExpired':
+        'The sign-in link has expired or was already used. Please request a '
+        'new email.',
+    'authInputInvalid':
+        'Please enter the sign-in code from the email, or paste the copied '
+        'sign-in link.',
     'authRateLimited':
         'Too many requests. Please wait a few minutes before requesting '
         'another link.',

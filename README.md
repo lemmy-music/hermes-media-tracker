@@ -43,7 +43,7 @@ Series status and progress are **derived** from the checked episodes (e.g. 10/19
 
 **Language** — German / English toggle (German is the default). Switching updates the UI, TMDB metadata and search language, and re-fetches stored metadata — including episode titles and descriptions.
 
-**Per-user data** — email sign-in (a **magic link** *or* the **one-time code** from the same email); every row is scoped to its owner through Postgres Row Level Security, so nothing is readable or writable without an authenticated session. Multiple people can use the same deployment, each with a completely separate library. The code path exists because **iOS isolates storage between Safari and a homescreen-PWA**, so a link opened in another context never lands in the PWA the app is used in — the code is typed straight into the app instead.
+**Per-user data** — email sign-in (a **magic link**, a **pasted magic link**, *or* the **one-time code** from the same email); every row is scoped to its owner through Postgres Row Level Security, so nothing is readable or writable without an authenticated session. Multiple people can use the same deployment, each with a completely separate library. Besides tapping the link, the second login step accepts a **pasted link** — or the numeric code — because **iOS isolates storage between Safari and a homescreen-PWA**, so a link opened in another context never lands in the PWA the app is used in. Pasting the link (or typing the code) redeems the token **in the app's own context**. Pasting works even on the Supabase free tier, where the mail template cannot be changed to include the code.
 
 ---
 
@@ -52,7 +52,7 @@ Series status and progress are **derived** from the checked episodes (e.g. 10/19
 | Layer | Choice |
 |---|---|
 | App | Flutter (Dart 3), Material 3, `provider` for state, `fl_chart` for charts |
-| Backend | Supabase — Postgres, Auth (magic link + email code), Row Level Security |
+| Backend | Supabase — Postgres, Auth (magic link + pasted link / email code), Row Level Security |
 | Metadata | TMDB (movies/series), OpenLibrary (books) |
 | Hosting | GitHub Pages, deployed by GitHub Actions on every push |
 
@@ -151,6 +151,8 @@ Pushing to `main` triggers [`.github/workflows/build-web.yml`](.github/workflows
 | 10 | Season pre-selection when opening a series | ✅ |
 | 11 | Instant library adoption of new items + open-from-search | ✅ |
 | 12 | Premium category banners with cover artwork | ✅ |
+| 13 | Email-code sign-in next to the magic link (iOS PWA fix) | ✅ |
+| 14 | Sign in by **pasting the magic link** (the real iOS-PWA fix) | ✅ |
 
 Detailed vision, decisions and known limitations: [`PROJECT.md`](PROJECT.md).
 
@@ -170,5 +172,7 @@ Detailed vision, decisions and known limitations: [`PROJECT.md`](PROJECT.md).
 - **An ISBN lookup stores the *work* key while showing *edition* metadata** (ISBNs identify a specific printing). This is what lets an ISBN add dedup against a normal title search; the trade-off is that two editions of the same work count as one entry.
 - **Reading history** starts from the reading-log migration: the backfill covers already-completed books, but pages read in a book that was in progress at that moment were never recorded.
 - **The ISBN barcode scanner is deferred** — `mobile_scanner` is a camera plugin that cannot run in the Flutter-web test loop; the web app ships the text-input path instead.
+- **The email-code path needs a Supabase mail-template change.** Supabase only includes the 6-digit code in the sign-in mail when the project's template contains `{{ .Token }}`, and **editing the mail template is not available on the free tier**. On this deployment only the **link** is therefore usable — tap it, or (on a homescreen-PWA) **copy and paste it** into the app (Phase 14). The code field stays in place so the path works unchanged if the project is ever upgraded.
+- **A magic-link token is single-use.** The pasted link must be the *unopened* link straight from the mail; once a link (or its token) has been redeemed, a fresh mail is required.
 
 Secrets are never committed; API tokens are injected at build time.

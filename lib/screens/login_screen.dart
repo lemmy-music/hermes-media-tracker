@@ -1,18 +1,20 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../providers/auth_provider.dart';
+import '../services/auth_input.dart';
 
 /// Signs the user in with an email magic link **or** the code from that email.
 ///
 /// Two views: the email form, and — once the email has been requested — a
-/// confirmation view carrying a numeric code input, so the user can finish
-/// sign-in *in this browser/PWA context* without leaving to open the link
-/// (which on iOS would land in a different storage — see PROJECT.md).
+/// confirmation view carrying a field that accepts **either** the numeric code
+/// **or** the pasted magic link (see [parseAuthInput]). Pasting the link lets
+/// the user finish sign-in *in this browser/PWA context* without leaving to
+/// open the link (which on iOS would land in a different storage — see
+/// PROJECT.md).
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -23,11 +25,6 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   /// Intentionally permissive — the server is the real authority.
   static final RegExp _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
-
-  /// Shortest / longest code we accept. Supabase's default is 6 digits; we
-  /// tolerate up to 8 so a differently configured project still works.
-  static const int _minCodeLength = 6;
-  static const int _maxCodeLength = 8;
 
   /// Seconds the "resend" action stays disabled after a send.
   static const int _resendCooldownSeconds = 30;
@@ -56,14 +53,12 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  /// A plausible code: 6–8 digits, nothing else.
-  bool get _codeLooksValid {
-    final code = _codeController.text.trim();
-    if (code.length < _minCodeLength || code.length > _maxCodeLength) {
-      return false;
-    }
-    return int.tryParse(code) != null;
-  }
+  /// Interpretation of the field's current content — a one-time code, a
+  /// magic-link token, or nothing usable. See [parseAuthInput].
+  AuthInput get _input => parseAuthInput(_codeController.text);
+
+  /// Whether the input is a code or a link/token we can try to redeem.
+  bool get _canSubmit => _input.isValid;
 
   Future<void> _send() async {
     final form = _formKey.currentState;
@@ -96,18 +91,36 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _verify() async {
-    if (!_codeLooksValid) return;
+    final input = _input;
     final auth = context.read<AuthProvider>();
+    final strings = context.stringsRead;
     final email = _sentTo;
     if (email == null) return;
-    final code = _codeController.text.trim();
+
+    // Reached on Enter with junk in the field — the button itself stays
+    // disabled for unusable input.
+    if (!input.isValid) {
+      setState(() => _codeError = strings.authInputInvalid);
+      return;
+    }
 
     setState(() {
       _verifying = true;
       _codeError = null;
     });
 
-    final error = await auth.verifyEmailCode(email: email, code: code);
+    // A numeric code is verified against the email; a pasted magic link is
+    // redeemed by its token — both inside *this* browser/PWA context.
+    final error = switch (input.kind) {
+      AuthInputKind.code => await auth.verifyEmailCode(
+        email: email,
+        code: input.value,
+      ),
+      AuthInputKind.tokenHash => await auth.verifyEmailLinkToken(
+        tokenHash: input.value,
+      ),
+      AuthInputKind.invalid => strings.authInputInvalid,
+    };
 
     // On success the SDK tells `onAuthStateChange` and the AuthGate swaps the
     // screen out from under us — guard the state write either way.
@@ -308,29 +321,34 @@ class _LoginScreenState extends State<LoginScreen> {
           background: cs.surfaceContainerHighest,
           foreground: cs.onSurfaceVariant,
         ),
+        const SizedBox(height: 12),
+        // The iOS-specific tip gets its own, more prominent box: on a
+        // homescreen-PWA a tapped link lands in Safari/another context, so
+        // copying + pasting is the reliable route.
+        _MessageBox(
+          icon: Icons.phone_iphone,
+          message: strings.pasteLinkHint,
+          background: cs.secondaryContainer,
+          foreground: cs.onSecondaryContainer,
+        ),
         const SizedBox(height: 20),
         TextField(
           key: const Key('login-code-field'),
           controller: _codeController,
           enabled: !_verifying,
           autofocus: true,
-          keyboardType: TextInputType.number,
+          keyboardType: TextInputType.text,
           textInputAction: TextInputAction.done,
-          textAlign: TextAlign.center,
-          maxLength: _maxCodeLength,
           autofillHints: const [AutofillHints.oneTimeCode],
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          style: theme.textTheme.headlineSmall?.copyWith(letterSpacing: 8),
           decoration: InputDecoration(
             labelText: strings.codeLabel,
             hintText: strings.codeHint,
-            counterText: '',
             prefixIcon: const Icon(Icons.password_outlined),
             border: const OutlineInputBorder(),
           ),
           onChanged: (_) => setState(() => _codeError = null),
           onSubmitted: (_) {
-            if (_codeLooksValid && !_verifying) _verify();
+            if (!_verifying) _verify();
           },
         ),
         if (_codeError != null) ...[
@@ -345,7 +363,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 20),
         FilledButton.icon(
           key: const Key('login-sign-in'),
-          onPressed: (_codeLooksValid && !_verifying) ? _verify : null,
+          onPressed: (_canSubmit && !_verifying) ? _verify : null,
           icon: _verifying
               ? const SizedBox(
                   width: 18,

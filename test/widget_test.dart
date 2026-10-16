@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:media_tracker/l10n/app_language.dart';
+import 'package:media_tracker/l10n/app_strings.dart';
 import 'package:media_tracker/main.dart';
 import 'package:media_tracker/models/media_item.dart';
 import 'package:media_tracker/providers/auth_provider.dart';
@@ -27,9 +28,13 @@ class _FakeAuth extends AuthProvider {
   /// Returned by [verifyEmailCode] instead of signing in.
   String? nextVerifyError;
 
+  /// Returned by [verifyEmailLinkToken] instead of signing in.
+  String? nextLinkError;
+
   int sendCount = 0;
   int signOutCount = 0;
   int verifyCount = 0;
+  int linkVerifyCount = 0;
 
   /// Email of the most recent [sendMagicLink] call.
   String? lastRequestedEmail;
@@ -37,6 +42,9 @@ class _FakeAuth extends AuthProvider {
   /// Arguments of the most recent [verifyEmailCode] call.
   String? lastVerifyEmail;
   String? lastVerifyCode;
+
+  /// Token of the most recent [verifyEmailLinkToken] call.
+  String? lastVerifyTokenHash;
 
   @override
   AuthStatus get status => _status;
@@ -69,6 +77,19 @@ class _FakeAuth extends AuthProvider {
     // A correct code establishes the session in this very context.
     _status = AuthStatus.signedIn;
     _email = email;
+    notifyListeners();
+    return null;
+  }
+
+  @override
+  Future<String?> verifyEmailLinkToken({required String tokenHash}) async {
+    linkVerifyCount++;
+    lastVerifyTokenHash = tokenHash;
+    final error = nextLinkError;
+    if (error != null) return error;
+    // Redeeming the token here establishes the session in this very context.
+    _status = AuthStatus.signedIn;
+    _email = lastRequestedEmail ?? 'me@example.com';
     notifyListeners();
     return null;
   }
@@ -388,7 +409,9 @@ void main() {
         find.byKey(const Key('login-code-field')),
       );
       expect(field.autofocus, isTrue);
-      expect(field.keyboardType, TextInputType.number);
+      // The field now accepts a pasted link too, so it uses the normal text
+      // keyboard instead of the numeric keypad.
+      expect(field.keyboardType, TextInputType.text);
       // The resend action starts in its cooldown against accidental spam.
       expect(find.text('Resend in 30s'), findsOneWidget);
     });
@@ -421,6 +444,8 @@ void main() {
         '123456',
       );
       await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
       await tester.tap(find.byKey(const Key('login-sign-in')));
       await tester.pump();
       await tester.pump();
@@ -447,6 +472,8 @@ void main() {
         '000000',
       );
       await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
       await tester.tap(find.byKey(const Key('login-sign-in')));
       await tester.pump();
       await tester.pump();
@@ -472,6 +499,8 @@ void main() {
       await tester.pump(const Duration(seconds: 31));
       expect(find.text('Resend email'), findsOneWidget);
 
+      await tester.ensureVisible(find.byKey(const Key('login-resend')));
+      await tester.pump();
       await tester.tap(find.byKey(const Key('login-resend')));
       await tester.pump();
       await tester.pump();
@@ -487,6 +516,159 @@ void main() {
       expect(find.text('Anmelden'), findsOneWidget);
       expect(find.text('Erneut senden in 30s'), findsOneWidget);
       expect(find.text('Sign in'), findsNothing);
+    });
+  });
+
+  group('login: pasted magic link (iOS PWA workaround)', () {
+    Future<void> sendEmail(WidgetTester tester, {String? label}) async {
+      await tester.enterText(find.byType(TextFormField), 'daniel@example.com');
+      await tester.tap(find.text(label ?? 'Send magic link'));
+      await tester.pump();
+      await tester.pump();
+    }
+
+    const link =
+        'https://example.supabase.co/auth/v1/verify?token=abc123def456'
+        '&type=magiclink&redirect_to=https://app.example/';
+
+    testWidgets('pasting a magic link in the field signs the user in', (
+      WidgetTester tester,
+    ) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+
+      await tester.enterText(find.byKey(const Key('login-code-field')), link);
+      await tester.pump();
+
+      await tester.ensureVisible(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
+      await tester.pump();
+
+      // The token was extracted from the URL and redeemed in this context.
+      expect(auth.linkVerifyCount, 1);
+      expect(auth.lastVerifyTokenHash, 'abc123def456');
+      // The code path was not taken.
+      expect(auth.verifyCount, 0);
+      // The AuthGate swapped to the app — the session exists in this context.
+      expect(find.text('Your library is empty'), findsOneWidget);
+    });
+
+    testWidgets('a whitespace-wrapped link is tolerated', (
+      WidgetTester tester,
+    ) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('login-code-field')),
+        '\n  $link  \n',
+      );
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(auth.linkVerifyCount, 1);
+      expect(auth.lastVerifyTokenHash, 'abc123def456');
+    });
+
+    testWidgets('a used / expired link shows a localized inline error', (
+      WidgetTester tester,
+    ) async {
+      const message =
+          'The sign-in link has expired or was already used. '
+          'Please request a new email.';
+      final auth = _FakeAuth(status: AuthStatus.signedOut)
+        ..nextLinkError = message;
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+
+      await tester.enterText(find.byKey(const Key('login-code-field')), link);
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text(message), findsOneWidget);
+      // Still on the confirmation view — no sign-in.
+      expect(find.text('Check your inbox'), findsOneWidget);
+      expect(find.text('Your library is empty'), findsNothing);
+    });
+
+    testWidgets('a non-link, non-code input keeps "Sign in" disabled', (
+      WidgetTester tester,
+    ) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('login-code-field')),
+        '12ab34',
+      );
+      await tester.pump();
+
+      final signIn = find.byKey(const Key('login-sign-in'));
+      expect(tester.widget<FilledButton>(signIn).onPressed, isNull);
+      expect(auth.linkVerifyCount, 0);
+    });
+
+    testWidgets('the iPhone copy-and-paste hint is shown (English)', (
+      WidgetTester tester,
+    ) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+
+      const en = AppStrings(AppLanguage.en);
+      expect(find.text(en.linkOrCodeHint), findsOneWidget);
+      expect(find.text(en.pasteLinkHint), findsOneWidget);
+      expect(find.textContaining('iPhone'), findsOneWidget);
+    });
+
+    testWidgets('the iPhone copy-and-paste hint is shown (German)', (
+      WidgetTester tester,
+    ) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth, settings: SettingsProvider());
+      await sendEmail(tester, label: 'Anmelde-Link senden');
+
+      const de = AppStrings(AppLanguage.de);
+      expect(find.text(de.linkOrCodeHint), findsOneWidget);
+      expect(find.text(de.pasteLinkHint), findsOneWidget);
+      expect(find.textContaining('Kopieren'), findsOneWidget);
+    });
+
+    testWidgets('the numeric code path still works unchanged', (
+      WidgetTester tester,
+    ) async {
+      final auth = _FakeAuth(status: AuthStatus.signedOut);
+      await _pumpApp(tester, auth: auth);
+      await sendEmail(tester);
+
+      await tester.enterText(
+        find.byKey(const Key('login-code-field')),
+        '654321',
+      );
+      await tester.pump();
+      await tester.ensureVisible(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('login-sign-in')));
+      await tester.pump();
+      await tester.pump();
+
+      expect(auth.verifyCount, 1);
+      expect(auth.lastVerifyCode, '654321');
+      expect(auth.linkVerifyCount, 0);
+      expect(find.text('Your library is empty'), findsOneWidget);
     });
   });
 }

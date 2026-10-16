@@ -197,4 +197,144 @@ void main() {
       expect(error, _de.authNetworkError);
     });
   });
+
+  group('describeAuthError — pasted link wording', () {
+    test('maps an expired / already-used link to the link message', () {
+      const expired = AuthApiException(
+        'Token has expired or is invalid',
+        statusCode: '403',
+        code: 'otp_expired',
+      );
+      expect(
+        describeAuthError(expired, strings: _de, forLink: true),
+        _de.authLinkExpired,
+      );
+      // Without the flag the code wording is kept.
+      expect(describeAuthError(expired, strings: _de), _de.authCodeExpired);
+    });
+
+    test('maps an invalid link token to the link message', () {
+      const invalid = AuthApiException(
+        'Invalid token',
+        statusCode: '403',
+        code: 'otp_invalid',
+      );
+      expect(
+        describeAuthError(invalid, strings: _de, forLink: true),
+        _de.authLinkInvalid,
+      );
+    });
+  });
+
+  group('SupabaseAuthProvider.verifyEmailLinkToken', () {
+    SupabaseAuthProvider provider(
+      List<http.Request> requests,
+      http.Response Function(http.Request request) response, {
+      AppLanguage language = AppLanguage.en,
+    }) {
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'public-anon-key',
+        httpClient: MockClient((request) async {
+          requests.add(request);
+          return response(request);
+        }),
+      );
+      final auth = SupabaseAuthProvider(
+        client: client,
+        language: () => language,
+      );
+      addTearDown(auth.dispose);
+      return auth;
+    }
+
+    http.Response okResponse(http.Request request) => http.Response(
+      _sessionJson(),
+      200,
+      request: request,
+      headers: <String, String>{'content-type': 'application/json'},
+    );
+
+    Map<String, dynamic> verifyBody(List<http.Request> requests) {
+      final verify = requests.singleWhere(
+        (r) => r.url.path.endsWith('/verify'),
+      );
+      expect(verify.method, 'POST');
+      return jsonDecode(verify.body) as Map<String, dynamic>;
+    }
+
+    test('sends the token as token_hash with OtpType.magiclink', () async {
+      final requests = <http.Request>[];
+      final auth = provider(requests, okResponse);
+
+      final error = await auth.verifyEmailLinkToken(tokenHash: 'abc123def456');
+
+      expect(error, isNull);
+      final body = verifyBody(requests);
+      expect(body['token_hash'], 'abc123def456');
+      // `OtpType.magiclink` serializes to the snake_case type `magiclink`.
+      expect(body['type'], 'magiclink');
+      // No email/token (code) fields for the link path.
+      expect(body.containsKey('email'), isFalse);
+      expect(body.containsKey('token'), isFalse);
+    });
+
+    test('a successful redemption signs the user in', () async {
+      final auth = provider(<http.Request>[], okResponse);
+      expect(auth.status, isNot(AuthStatus.signedIn));
+
+      await auth.verifyEmailLinkToken(tokenHash: 'abc123');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(auth.status, AuthStatus.signedIn);
+      expect(auth.email, 'daniel@example.com');
+    });
+
+    test('a used / expired token returns the localized link message', () async {
+      final auth = provider(
+        <http.Request>[],
+        (request) => http.Response(
+          _errorJson('otp_expired', 'Token has expired or is invalid'),
+          403,
+          request: request,
+          headers: <String, String>{'content-type': 'application/json'},
+        ),
+        language: AppLanguage.de,
+      );
+
+      final error = await auth.verifyEmailLinkToken(tokenHash: 'stale');
+
+      expect(error, _de.authLinkExpired);
+      expect(auth.status, isNot(AuthStatus.signedIn));
+    });
+
+    test('an invalid token returns the localized link message', () async {
+      final auth = provider(
+        <http.Request>[],
+        (request) => http.Response(
+          _errorJson('otp_invalid', 'Invalid token'),
+          403,
+          request: request,
+          headers: <String, String>{'content-type': 'application/json'},
+        ),
+        language: AppLanguage.de,
+      );
+
+      final error = await auth.verifyEmailLinkToken(tokenHash: 'nope');
+
+      expect(error, _de.authLinkInvalid);
+    });
+
+    test('catches a network failure', () async {
+      final auth = provider(
+        <http.Request>[],
+        (request) => throw http.ClientException('offline', request.url),
+        language: AppLanguage.de,
+      );
+
+      final error = await auth.verifyEmailLinkToken(tokenHash: 'abc123');
+
+      expect(error, _de.authNetworkError);
+    });
+  });
 }

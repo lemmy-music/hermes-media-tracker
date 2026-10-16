@@ -52,6 +52,21 @@ abstract class AuthProvider extends ChangeNotifier {
     required String code,
   });
 
+  /// Verifies a **magic-link token** the user copied out of the sign-in email
+  /// and pasted into the field ([parseAuthInput] extracts it).
+  ///
+  /// This is the iOS-PWA workaround: tapping the link opens a *different*
+  /// browser context (Safari or the mail app's in-app browser), whose storage
+  /// iOS keeps apart from a homescreen-PWA — so the session would never reach
+  /// the app. Redeeming the token **in this context** creates the session
+  /// exactly where the app runs.
+  ///
+  /// [tokenHash] is the value of the `token` / `token_hash` query parameter of
+  /// the mail link. Returns `null` on success (the SDK then reports the new
+  /// session through `onAuthStateChange`), otherwise a user-facing, localized
+  /// error message — an expired or already-used token is reported as such.
+  Future<String?> verifyEmailLinkToken({required String tokenHash});
+
   /// Signs the current user out.
   Future<void> signOut();
 }
@@ -148,6 +163,28 @@ class SupabaseAuthProvider extends AuthProvider {
   }
 
   @override
+  Future<String?> verifyEmailLinkToken({required String tokenHash}) async {
+    try {
+      // The sign-in mail's link points at GoTrue's `/verify` endpoint with the
+      // token in the `token` / `token_hash` query parameter. `verifyOTP` with
+      // `tokenHash` posts exactly that value as `token_hash`, and the type must
+      // match how the mail was generated: `OtpType.magiclink` for a magic link
+      // (`OtpType.email` is the type for the plain numeric code — see
+      // `verifyEmailCode`). This redeems the token in the *current* browser/PWA
+      // context, so the session lands where the app runs.
+      await _client.auth.verifyOTP(
+        tokenHash: tokenHash,
+        type: OtpType.magiclink,
+      );
+      return null;
+    } on AuthException catch (error) {
+      return describeAuthError(error, strings: _strings, forLink: true);
+    } catch (_) {
+      return _strings.authNetworkError;
+    }
+  }
+
+  @override
   Future<void> signOut() async {
     try {
       await _client.auth.signOut();
@@ -180,11 +217,17 @@ class SupabaseAuthProvider extends AuthProvider {
 ///
 /// The message is localized with [strings] (English by default) so the login
 /// screen can show it in the active language. Kept in one place so the
-/// magic-link send and the email-code verify share the exact same wording and
-/// never drift apart.
+/// magic-link send, the email-code verify and the pasted-link verify share the
+/// exact same wording and never drift apart.
+///
+/// Set [forLink] when the failure came from redeeming a **pasted magic link**
+/// rather than typing a code: the "invalid" / "expired" cases then return
+/// link-specific wording (a used-up link is the common one) instead of the
+/// code wording — the mapping itself is not duplicated.
 String describeAuthError(
   AuthException error, {
   AppStrings strings = const AppStrings(AppLanguage.en),
+  bool forLink = false,
 }) {
   // A failed fetch (offline, DNS, CORS, or a 5xx) surfaces as a retryable
   // fetch exception without a response body — report it as a connection issue.
@@ -205,10 +248,11 @@ String describeAuthError(
   }
 
   // An expired one-time code (or an expired request). GoTrue reports this as
-  // `otp_expired` ("Token has expired or is invalid").
+  // `otp_expired` ("Token has expired or is invalid"); an **already used**
+  // magic link surfaces the same way, so the link wording mentions both.
   final isExpired = error.code == 'otp_expired' || message.contains('expired');
   if (isExpired) {
-    return strings.authCodeExpired;
+    return forLink ? strings.authLinkExpired : strings.authCodeExpired;
   }
 
   // A wrong one-time code. GoTrue reports `otp_invalid` ("Invalid token") — the
@@ -220,7 +264,7 @@ String describeAuthError(
       message.contains('otp') ||
       message.contains('code');
   if (error.code == 'otp_invalid' || (looksWrongCode && mentionsCode)) {
-    return strings.authCodeInvalid;
+    return forLink ? strings.authLinkInvalid : strings.authCodeInvalid;
   }
 
   final isBadEmail =

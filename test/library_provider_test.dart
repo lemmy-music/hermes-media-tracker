@@ -123,6 +123,10 @@ class _FakeAuth extends AuthProvider {
   }) async => null;
 
   @override
+  Future<String?> verifyEmailLinkToken({required String tokenHash}) async =>
+      null;
+
+  @override
   Future<void> signOut() async {}
 }
 
