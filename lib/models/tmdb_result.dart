@@ -68,6 +68,7 @@ class TmdbSearchResult {
     this.year,
     this.posterPath,
     this.overview,
+    this.voteCount = 0,
   });
 
   /// Parses a raw search result. Returns `null` for entries that are not
@@ -98,6 +99,9 @@ class TmdbSearchResult {
       ),
       posterPath: jsonString(json['poster_path']),
       overview: jsonString(json['overview']),
+      // Present on `search/movie`, `search/tv` **and** `search/multi`;
+      // tolerated as `0` when the API omits it.
+      voteCount: jsonInt(json['vote_count']) ?? 0,
     );
   }
 
@@ -114,6 +118,10 @@ class TmdbSearchResult {
   final int? year;
   final String? posterPath;
   final String? overview;
+
+  /// TMDB `vote_count` — the popularity signal the search ranking sorts by
+  /// (never `vote_average`). Missing values are `0`, so they sort last.
+  final int voteCount;
 
   /// Full poster URL (`w342`), or `null` when the API returned no artwork.
   String? get posterUrl => TmdbImages.poster(posterPath);

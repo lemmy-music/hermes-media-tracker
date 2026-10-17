@@ -190,6 +190,115 @@ void main() {
         'Der Herr der Ringe',
       ]);
     });
+
+    test('orders each language group by popularity (ratings_count)', () async {
+      final client = _client(
+        (_) async => _json({
+          'docs': [
+            // German group, out of order: the niche title comes first.
+            {
+              'key': '/works/OLG1W',
+              'title': 'Nischenbuch',
+              'language': ['ger'],
+              'ratings_count': 2,
+            },
+            {
+              'key': '/works/OLG2W',
+              'title': 'Bekanntes Buch',
+              'language': ['ger'],
+              'ratings_count': 900,
+            },
+            // English group, out of order too.
+            {
+              'key': '/works/OLE1W',
+              'title': 'Obscure English',
+              'language': ['eng'],
+              'ratings_count': 1,
+            },
+            {
+              'key': '/works/OLE2W',
+              'title': 'Famous English',
+              'language': ['eng'],
+              'ratings_count': 5000,
+            },
+          ],
+        }),
+        language: AppLanguage.de,
+      );
+
+      final results = await client.search('buch');
+
+      // German stays primary, popularity only orders within each group.
+      expect(results.map((r) => r.title), [
+        'Bekanntes Buch',
+        'Nischenbuch',
+        'Famous English',
+        'Obscure English',
+      ]);
+    });
+
+    test('falls back to edition_count when ratings_count is missing', () async {
+      final client = _client(
+        (_) async => _json({
+          'docs': [
+            {
+              'key': '/works/OL1W',
+              'title': 'Rare Work',
+              'language': ['eng'],
+              'edition_count': 1,
+            },
+            {
+              'key': '/works/OL2W',
+              'title': 'Widely Printed',
+              'language': ['eng'],
+              'edition_count': 120,
+            },
+            {
+              'key': '/works/OL3W',
+              'title': 'Rated, Few Editions',
+              'language': ['eng'],
+              'edition_count': 2,
+              'ratings_count': 800,
+            },
+          ],
+        }),
+        language: AppLanguage.en,
+      );
+
+      final results = await client.search('work');
+      expect(results.map((r) => r.title), [
+        'Rated, Few Editions',
+        'Widely Printed',
+        'Rare Work',
+      ]);
+      expect(results.first.ratingsCount, 800);
+      expect(results[1].ratingsCount, isNull);
+    });
+
+    test('a hit with neither signal sorts last', () async {
+      final client = _client(
+        (_) async => _json({
+          'docs': [
+            {
+              'key': '/works/OL1W',
+              'title': 'No Signal',
+              'language': ['eng'],
+            },
+            {
+              'key': '/works/OL2W',
+              'title': 'Rated',
+              'language': ['eng'],
+              'ratings_count': 4,
+            },
+          ],
+        }),
+        language: AppLanguage.en,
+      );
+
+      final results = await client.search('x');
+      expect(results.map((r) => r.title), ['Rated', 'No Signal']);
+      expect(results.last.popularity, 0);
+    });
   });
 
   group('OpenLibraryClient.fetchDetails', () {

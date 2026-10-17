@@ -137,6 +137,67 @@ void main() {
     });
   });
 
+  group('TmdbClient.search ranking', () {
+    test('keeps the exact title first, then orders by vote_count', () async {
+      final client = _client(
+        (_) async => _json({
+          'results': [
+            {
+              'id': 10,
+              'media_type': 'movie',
+              'title': 'Behind the Scenes: Star Wars',
+              'vote_count': 9000,
+            },
+            {
+              'id': 11,
+              'media_type': 'movie',
+              'title': 'Star Wars: A New Hope',
+              'vote_count': 3000,
+            },
+            {
+              'id': 12,
+              'media_type': 'movie',
+              'title': 'Star Wars',
+              'vote_count': 120,
+            },
+          ],
+        }),
+      );
+
+      final results = await client.search('Star Wars');
+
+      // Exact → prefix (by votes) → the rest, independent of the API order.
+      expect(results.map((result) => result.title), [
+        'Star Wars',
+        'Star Wars: A New Hope',
+        'Behind the Scenes: Star Wars',
+      ]);
+    });
+
+    test('a hit without vote_count counts as 0 and sorts last', () async {
+      final client = _client(
+        (_) async => _json({
+          'results': [
+            {'id': 1, 'media_type': 'movie', 'title': 'Dune: Part Two'},
+            {
+              'id': 2,
+              'media_type': 'movie',
+              'title': 'Dune Messiah',
+              'vote_count': 3,
+            },
+          ],
+        }),
+      );
+
+      final results = await client.search('dune');
+      expect(results.map((result) => result.title), [
+        'Dune Messiah',
+        'Dune: Part Two',
+      ]);
+      expect(results.last.voteCount, 0);
+    });
+  });
+
   group('TmdbClient localization', () {
     test('localizes error messages to the request language', () async {
       final client = _client((_) async => _json({}, status: 429));
@@ -363,6 +424,23 @@ void main() {
       expect(result.shortOverview, isNotNull);
       expect(result.shortOverview!.length, lessThanOrEqualTo(140));
       expect(result.shortOverview, endsWith('…'));
+    });
+
+    test('parses vote_count and defaults a missing value to 0', () {
+      final rated = TmdbSearchResult.fromJson({
+        'id': 1,
+        'media_type': 'movie',
+        'title': 'X',
+        'vote_count': 1234,
+      })!;
+      expect(rated.voteCount, 1234);
+
+      final unrated = TmdbSearchResult.fromJson({
+        'id': 2,
+        'media_type': 'tv',
+        'name': 'Y',
+      })!;
+      expect(unrated.voteCount, 0);
     });
 
     test('rejects entries without a title', () {

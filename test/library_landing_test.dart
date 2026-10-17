@@ -306,6 +306,71 @@ void main() {
     expect(find.text('Dune'), findsNothing);
   });
 
+  testWidgets('the AppBar title follows the filter change (EN)', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repository: _FakeRepository(
+        items: [_movie('Inception'), _series('Dark'), _book('Dune')],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(LibraryScreen.movieTileKey));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Movies'), findsOneWidget);
+
+    // Switching the media-type filter renames the screen immediately.
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Series'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Series'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, 'Movies'), findsNothing);
+    expect(find.text('Dark'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Books'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Books'), findsOneWidget);
+    expect(find.text('Dune'), findsOneWidget);
+
+    // "All" falls back to the plain library title.
+    // (Two chip rows carry an "All" — the media-type row comes first.)
+    await tester.tap(find.widgetWithText(ChoiceChip, 'All').first);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Library'), findsOneWidget);
+    expect(find.text('Inception'), findsOneWidget);
+    expect(find.text('Dark'), findsOneWidget);
+  });
+
+  testWidgets('the AppBar title follows the filter change (DE)', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repository: _FakeRepository(
+        items: [_movie('Inception'), _series('Dark'), _book('Dune')],
+      ),
+      language: AppLanguage.de,
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(LibraryScreen.movieTileKey));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Filme'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Serien'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Serien'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Bücher'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Bücher'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Alle').first);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Bibliothek'), findsOneWidget);
+  });
+
   testWidgets('the tiles are localized in German', (tester) async {
     await _pump(
       tester,

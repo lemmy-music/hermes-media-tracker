@@ -33,7 +33,8 @@ class LibraryListView extends StatefulWidget {
   /// Media-type filter the list opens with — set by the landing tile.
   final LibraryKindFilter initialKind;
 
-  /// AppBar title override; defaults to the localized title for [initialKind].
+  /// AppBar title override; defaults to the localized title for the **live**
+  /// media-type filter (so it follows a filter change, not [initialKind]).
   final String? title;
 
   /// Above this width the posters grow a little (tablet / desktop web).
@@ -131,7 +132,11 @@ class _LibraryListViewState extends State<LibraryListView> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.title ?? strings.libraryListTitle(widget.initialKind),
+          // The title follows the **live** media-type filter, not the
+          // `initialKind` the list was opened with: switching from Movies to
+          // Series/Books (or to All) must rename the screen without a
+          // navigation round-trip.
+          widget.title ?? strings.libraryListTitle(_kindFilter),
         ),
       ),
       body: Column(

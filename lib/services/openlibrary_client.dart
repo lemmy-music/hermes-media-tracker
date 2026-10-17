@@ -8,6 +8,7 @@ import '../l10n/app_strings.dart';
 import '../models/book_result.dart';
 import '../models/json_utils.dart';
 import 'isbn.dart';
+import 'search_ranking.dart';
 
 /// An OpenLibrary failure translated into a message safe to show the user.
 class OpenLibraryException implements Exception {
@@ -56,7 +57,7 @@ class OpenLibraryClient {
   /// otherwise. Exactly the columns the app parses.
   static const String searchFields =
       'key,title,author_name,first_publish_year,cover_i,edition_count,'
-      'language,isbn,number_of_pages_median';
+      'language,isbn,number_of_pages_median,ratings_count';
 
   final http.Client _http;
 
@@ -74,6 +75,12 @@ class OpenLibraryClient {
   /// [language] `de` does **not** filter — it only moves hits whose `language`
   /// array contains `ger`/`deu` to the front (stable partition), so works
   /// without language metadata never disappear.
+  ///
+  /// Within each language group the hits are ordered by **popularity**
+  /// (`ratings_count`, falling back to `edition_count`) instead of
+  /// OpenLibrary's relevance order, which surfaces niche / derivative works
+  /// above the well-known title the user meant. The `limit` (20 hits) is
+  /// unchanged — ranking only reorders what the API already returned.
   Future<List<BookResult>> search(
     String query, {
     int limit = defaultLimit,
@@ -104,7 +111,9 @@ class OpenLibraryClient {
     return rankForLanguage(parsed, language ?? this.language);
   }
 
-  /// Stable partition: German hits first, everything else keeps its order.
+  /// Stable partition: German hits first, everything else after them; each
+  /// **group** is then ordered by popularity (`BookResult.popularity`:
+  /// `ratings_count`, falling back to `edition_count`), stable on ties.
   ///
   /// Deliberately *not* a filter — OpenLibrary's `language` array is often
   /// missing or describes only one edition, so hard-filtering would drop good
@@ -113,13 +122,18 @@ class OpenLibraryClient {
     List<BookResult> results,
     AppLanguage language,
   ) {
-    if (language != AppLanguage.de || results.isEmpty) return results;
+    if (results.isEmpty) return results;
+    List<BookResult> byPopularity(List<BookResult> group) =>
+        rankByPopularity(group, popularityOf: (result) => result.popularity);
+
+    if (language != AppLanguage.de) return byPopularity(results);
+
     final german = <BookResult>[];
     final rest = <BookResult>[];
     for (final result in results) {
       (result.isGerman ? german : rest).add(result);
     }
-    return <BookResult>[...german, ...rest];
+    return <BookResult>[...byPopularity(german), ...byPopularity(rest)];
   }
 
   // ───────────────────────────────────────────────────────────────────────────

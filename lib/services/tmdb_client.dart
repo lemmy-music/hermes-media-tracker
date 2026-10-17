@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../l10n/app_strings.dart';
 import '../models/tmdb_result.dart';
+import 'search_ranking.dart';
 
 /// A TMDB failure translated into a message that is safe to show the user.
 class TmdbException implements Exception {
@@ -140,7 +141,16 @@ class TmdbClient {
       final result = TmdbSearchResult.fromJson(map);
       if (result != null) parsed.add(result);
     }
-    return parsed;
+    // Exact / prefix title hits stay on top, the rest is ordered by
+    // popularity (`vote_count`) — TMDB's own relevance order promotes niche
+    // "behind the scenes" material above the title the user meant. The 20-hit
+    // limit is applied by the API (`page`), never here.
+    return rankSearchResults(
+      trimmed,
+      parsed,
+      titleOf: (result) => result.title,
+      popularityOf: (result) => result.voteCount,
+    );
   }
 
   // ───────────────────────────────────────────────────────────────────────────

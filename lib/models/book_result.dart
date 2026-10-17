@@ -78,6 +78,7 @@ class BookResult {
     this.firstPublishYear,
     this.coverId,
     this.editionCount,
+    this.ratingsCount,
     this.languages = const <String>[],
     this.isbns = const <String>[],
     this.pageCount,
@@ -100,6 +101,7 @@ class BookResult {
           yearFromText(json['first_publish_year']),
       coverId: jsonInt(json['cover_i']),
       editionCount: jsonInt(json['edition_count']),
+      ratingsCount: jsonInt(json['ratings_count']),
       languages: jsonStringList(json['language']),
       isbns: jsonStringList(json['isbn']),
       pageCount: jsonInt(json['number_of_pages_median']),
@@ -116,6 +118,14 @@ class BookResult {
 
   /// How many editions OpenLibrary knows for this work.
   final int? editionCount;
+
+  /// `ratings_count` — how many readers rated the work; the popularity signal
+  /// the search ranking sorts by. `null` when OpenLibrary has no rating data.
+  final int? ratingsCount;
+
+  /// The popularity used for ranking: [ratingsCount], falling back to
+  /// [editionCount] (a work with many editions is a well-known one), else `0`.
+  int get popularity => ratingsCount ?? editionCount ?? 0;
 
   /// ISO-639 codes of the editions OpenLibrary indexed (`eng`, `ger`, …).
   final List<String> languages;
