@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
 import '../services/library_filter.dart';
@@ -8,10 +6,17 @@ import 'media_widgets.dart';
 /// A tall, premium category banner for the library landing screen.
 ///
 /// Replaces the old small tile: a full-width card (~156 logical px; one column
-/// on phones, two from 600 px) whose background is built from the category's
-/// newest cover, with one or two older covers *fanned behind* it — decorative,
-/// offset up and to the right, tilted and dimmed — and a dark→transparent scrim
-/// carrying the white category label, the count and a subtle kind icon.
+/// on phones, two from 600 px) whose background is a calm theme gradient, with
+/// the category's newest cover and one or two older covers *fanned* on the
+/// right — decorative, offset up and to the right, tilted and dimmed — and a
+/// dark→transparent scrim carrying the white category label, the count and a
+/// subtle kind icon.
+///
+/// The gradient is the whole background on purpose: an earlier version laid a
+/// blurred, full-bleed copy of the newest cover behind the fan, but a Gaussian
+/// blur over the full card is re-rastered on every repaint and measurably cost
+/// frames while scrolling the library. The theme gradient looks the same at a
+/// fraction of the cost.
 ///
 /// A category without any cover (typically OpenLibrary books) renders the very
 /// same layout over a calm theme gradient instead — never a broken or empty
@@ -133,8 +138,8 @@ class CategoryBanner extends StatelessWidget {
   }
 }
 
-/// Background layer: theme gradient, plus — when a cover exists — a dimmed,
-/// softly blurred full-bleed hero and the fanned deck of covers on the right.
+/// Background layer: the theme gradient, plus — when a cover exists — the
+/// fanned deck of covers on the right (otherwise a large kind icon).
 class _Background extends StatelessWidget {
   const _Background({required this.artwork, required this.icon});
 
@@ -144,19 +149,20 @@ class _Background extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final gradient = BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [cs.primary, cs.primaryContainer],
-      ),
-    );
 
-    if (!artwork.hasCover) {
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          DecoratedBox(decoration: gradient),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [cs.primary, cs.primaryContainer],
+            ),
+          ),
+        ),
+        if (!artwork.hasCover)
           Align(
             alignment: Alignment.centerRight,
             child: Padding(
@@ -167,36 +173,12 @@ class _Background extends StatelessWidget {
                 color: cs.onPrimary.withValues(alpha: 0.22),
               ),
             ),
+          )
+        else
+          Align(
+            alignment: Alignment.centerRight,
+            child: _FanDeck(artwork: artwork),
           ),
-        ],
-      );
-    }
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        DecoratedBox(decoration: gradient),
-        // The newest cover, heavily blurred + dimmed, as the atmospheric
-        // background so the crisp deck below never reads as a duplicate.
-        Positioned.fill(
-          child: ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: ColorFiltered(
-              colorFilter: ColorFilter.mode(
-                Colors.black.withValues(alpha: 0.45),
-                BlendMode.darken,
-              ),
-              child: CoverImage(
-                url: artwork.heroUrl,
-                placeholderBuilder: (_) => const SizedBox.shrink(),
-              ),
-            ),
-          ),
-        ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: _FanDeck(artwork: artwork),
-        ),
       ],
     );
   }
@@ -236,34 +218,34 @@ class _FanDeck extends StatelessWidget {
   }
 
   Widget _card({required String? url, required int depth}) {
+    // Behind-cards are dimmed and pushed right + up, so only their top / right
+    // edges peek past the crisp hero; the banner clips whatever leaves the box.
+    // The dim is a plain black overlay *inside* the rounded clip — same pixels
+    // as a darken colour filter, without a save-layer per card.
+    final dim = depth == 0 ? 0.0 : (depth == 1 ? 0.35 : 0.55);
+
     final card = ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
         width: _cardWidth,
         height: _cardHeight,
-        child: CoverImage(
-          url: url,
-          placeholderBuilder: (_) => const SizedBox.shrink(),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CoverImage(
+              url: url,
+              placeholderBuilder: (_) => const SizedBox.shrink(),
+            ),
+            if (dim > 0) ColoredBox(color: Colors.black.withValues(alpha: dim)),
+          ],
         ),
       ),
     );
 
-    // Behind-cards are dimmed and pushed right + up, so only their top / right
-    // edges peek past the crisp hero; the banner clips whatever leaves the box.
-    final Widget composed = depth == 0
-        ? card
-        : ColorFiltered(
-            colorFilter: ColorFilter.mode(
-              Colors.black.withValues(alpha: depth == 1 ? 0.35 : 0.55),
-              BlendMode.darken,
-            ),
-            child: card,
-          );
-
     return Positioned(
       right: -depth * 14.0,
       bottom: depth * 10.0,
-      child: Transform.rotate(angle: depth * 0.08, child: composed),
+      child: Transform.rotate(angle: depth * 0.08, child: card),
     );
   }
 }
