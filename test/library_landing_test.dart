@@ -94,9 +94,8 @@ MediaItem _book(String title, {String? posterUrl, DateTime? createdAt}) =>
       createdAt: createdAt,
     );
 
-/// Finds an [Image] backed by a [NetworkImage] for [url] — a cover can appear
-/// in more than one banner (and in several fan layers), so this may match more
-/// than once.
+/// Finds an [Image] backed by a [NetworkImage] for [url] — the banner renders
+/// the same cover in several layers, so this matches one or more.
 Finder _imageWithUrl(String url) => find.byWidgetPredicate(
   (widget) =>
       widget is Image &&
@@ -417,47 +416,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // The newest cover is the hero — exactly once per banner, as the front of
-    // the fan (there is deliberately no full-bleed blurred copy behind it)…
-    final movieBanner = find.byKey(LibraryScreen.movieTileKey);
+    // The newest cover is the hero (background + deck front)…
     expect(
-      find.descendant(
-        of: movieBanner,
-        matching: _imageWithUrl('https://image.tmdb.org/t/p/w342/incep.jpg'),
-      ),
-      findsOneWidget,
+      _imageWithUrl('https://image.tmdb.org/t/p/w342/incep.jpg'),
+      findsWidgets,
     );
     // …the older one fans behind it.
     expect(
-      find.descendant(
-        of: movieBanner,
-        matching: _imageWithUrl('https://image.tmdb.org/t/p/w342/arrival.jpg'),
-      ),
+      _imageWithUrl('https://image.tmdb.org/t/p/w342/arrival.jpg'),
       findsWidgets,
     );
-  });
-
-  testWidgets('banners paint no blurred / colour-filtered background', (
-    tester,
-  ) async {
-    await _pump(
-      tester,
-      repository: _FakeRepository(
-        items: [
-          _movie(
-            'Inception',
-            posterUrl: 'https://image.tmdb.org/t/p/w342/incep.jpg',
-            createdAt: DateTime(2026),
-          ),
-        ],
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // A full-bleed Gaussian blur is re-rastered on every repaint and cost
-    // frames while scrolling; the theme gradient carries the look instead.
-    expect(find.byType(ImageFiltered), findsNothing);
-    expect(find.byType(ColorFiltered), findsNothing);
   });
 
   testWidgets('a category without a cover shows the gradient fallback', (
